@@ -17,6 +17,28 @@ team can verify offline.
 
 ---
 
+## Run it end-to-end on your own machine
+
+One command brings up the gateway, the 10 000-item adversarial benchmark,
+the penetration + overload battery, and an interactive chat endpoint
+against a local LLM (Ollama `llama3.1:8b`):
+
+```bash
+./scripts/launch_local.sh        # menu: 1/2/3/4
+```
+
+Optimised for NVIDIA GB10 / DGX Spark; runs anywhere.
+See [docs/LOCAL_GB10_END_PRODUCT.md](docs/LOCAL_GB10_END_PRODUCT.md).
+
+**Latest signed runs** (reproducible with `./scripts/launch_local.sh 4`):
+
+- **TrustLens-10k adversarial benchmark**: 10 / 10 axes PASS, 10 000 items, 3.3 s
+- **Penetration + overload battery**: 26 / 26 vectors PASS, 1 → 1000 RPS ramp with no 5xx
+- **MCP agent surface**: 53 tools, stdio-ready for Claude Desktop / Code / Cursor
+- **Full test suite**: 85+ passing
+
+---
+
 ## Table of contents
 
 1. [The problem](#the-problem)
