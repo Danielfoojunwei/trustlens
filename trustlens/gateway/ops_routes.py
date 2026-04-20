@@ -74,19 +74,55 @@ class FeatureSettings(BaseModel):
 
 
 class SettingsStore:
-    """Tiny in-process settings — swap for Postgres / Consul in HA."""
+    """Thread-safe in-process settings store.
 
-    def __init__(self) -> None:
+    If ``path`` is supplied, updates are atomically persisted to a JSON file
+    and re-loaded on restart. For multi-replica HA, back this with a shared
+    store (Postgres / Consul) that implements the same two-method interface.
+    """
+
+    def __init__(self, path: Optional[str] = None) -> None:
+        import json as _json
+        import os as _os
+        from pathlib import Path
+        from threading import Lock
+
+        self._path = Path(path) if path else None
+        self._lock = Lock()
         self._s: dict = FeatureSettings().model_dump()
+        if self._path and self._path.exists():
+            try:
+                loaded = _json.loads(self._path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    self._s.update(loaded)
+            except (OSError, ValueError):
+                # Corrupt / unreadable file — keep defaults rather than crash
+                pass
 
     def get(self) -> dict:
-        return dict(self._s)
+        with self._lock:
+            return dict(self._s)
 
     def update(self, patch: dict) -> dict:
-        for k, v in patch.items():
-            if v is not None:
-                self._s[k] = v
-        return dict(self._s)
+        with self._lock:
+            for k, v in patch.items():
+                if v is not None:
+                    self._s[k] = v
+            if self._path is not None:
+                self._persist_locked()
+            return dict(self._s)
+
+    def _persist_locked(self) -> None:
+        import json as _json
+        import os as _os
+
+        tmp = self._path.with_suffix(self._path.suffix + ".tmp")
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(
+            _json.dumps(self._s, sort_keys=True, indent=2),
+            encoding="utf-8",
+        )
+        _os.replace(tmp, self._path)
 
 
 # ---------------------------------------------------------------------------

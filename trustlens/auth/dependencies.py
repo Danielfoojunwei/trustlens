@@ -11,6 +11,7 @@ returns a dependency that additionally enforces an RBAC permission.
 
 from __future__ import annotations
 
+from threading import Lock
 from typing import Optional
 
 from fastapi import Cookie, Header, HTTPException
@@ -38,25 +39,37 @@ class AuthContext:
         self.api_keys = api_keys
 
 
+# Module-level context backed by a lock. FastAPI's per-request dependencies
+# do not thread this through every signature, so a guarded singleton is the
+# simplest correct option. Writes take the lock; reads return a snapshot.
+_CTX_LOCK = Lock()
 _CTX: Optional[AuthContext] = None
 
 
 def set_auth_context(ctx: AuthContext) -> None:
     global _CTX
-    _CTX = ctx
+    with _CTX_LOCK:
+        _CTX = ctx
 
 
 def get_auth_context() -> AuthContext:
-    if _CTX is None:
+    with _CTX_LOCK:
+        ctx = _CTX
+    if ctx is None:
         raise RuntimeError("auth context not initialized; call set_auth_context()")
-    return _CTX
+    return ctx
+
+
+def _current_ctx() -> Optional[AuthContext]:
+    with _CTX_LOCK:
+        return _CTX
 
 
 async def current_user_or_none(
     tl_session: Optional[str] = Cookie(default=None),
     authorization: Optional[str] = Header(default=None),
 ) -> Optional[User]:
-    ctx = _CTX
+    ctx = _current_ctx()
     if ctx is None:
         return None
     if tl_session:

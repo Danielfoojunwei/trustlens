@@ -237,28 +237,40 @@ def build_auth_router(
 
 
 def bootstrap_default_users(users: UserStore) -> None:
-    """Seed a default owner if the store is empty — for demo only.
+    """Seed a single owner if the user store is empty.
 
-    Creates owner@trustlens.local / password ``trustlens``. Production must
-    override this via the ``TRUSTLENS_BOOTSTRAP_*`` env vars or a proper
-    user management flow.
+    Credentials come from env vars; there are no hardcoded fallbacks.
+
+        TRUSTLENS_BOOTSTRAP_EMAIL       — owner email
+        TRUSTLENS_BOOTSTRAP_PASSWORD    — owner password (required when prod)
+        TRUSTLENS_PROD_MODE=1           — strict: refuse to start without the vars
+
+    When ``TRUSTLENS_PROD_MODE`` is unset (dev mode) and the vars are missing,
+    the function is a no-op and the gateway boots with an empty user store —
+    which means every protected endpoint returns 401 until an operator seeds
+    a user. That is intentionally conservative: no usable default credentials
+    ever ship.
     """
     if users.all():
         return
     import os
-    email = os.environ.get("TRUSTLENS_BOOTSTRAP_EMAIL", "owner@trustlens.local")
-    pw    = os.environ.get("TRUSTLENS_BOOTSTRAP_PASSWORD", "trustlens")
+    import sys
+    prod = os.environ.get("TRUSTLENS_PROD_MODE", "").strip() == "1"
+    email = os.environ.get("TRUSTLENS_BOOTSTRAP_EMAIL", "").strip()
+    pw = os.environ.get("TRUSTLENS_BOOTSTRAP_PASSWORD", "").strip()
+    if not email or not pw:
+        msg = (
+            "bootstrap: TRUSTLENS_BOOTSTRAP_EMAIL / "
+            "TRUSTLENS_BOOTSTRAP_PASSWORD are not set; skipping owner seed."
+        )
+        if prod:
+            raise RuntimeError(
+                "TRUSTLENS_PROD_MODE=1 but "
+                "TRUSTLENS_BOOTSTRAP_EMAIL / _PASSWORD are not set"
+            )
+        print(msg, file=sys.stderr)
+        return
     users.put(User(
-        user_id="u_owner", email=email, display_name="Default Owner",
+        user_id="u_owner", email=email.lower(), display_name="Owner",
         role=Role.OWNER, password_hash=hash_password(pw),
-    ))
-    users.put(User(
-        user_id="u_viewer", email="viewer@trustlens.local",
-        display_name="Viewer", role=Role.VIEWER,
-        password_hash=hash_password("viewer"),
-    ))
-    users.put(User(
-        user_id="u_operator", email="operator@trustlens.local",
-        display_name="Operator", role=Role.OPERATOR,
-        password_hash=hash_password("operator"),
     ))

@@ -108,16 +108,41 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     return 0 if result.valid else 1
 
 
+def _assert_tls_or_dev(args: argparse.Namespace) -> None:
+    """Refuse HTTP when prod mode is set and no TLS flags / reverse proxy."""
+    prod = os.environ.get("TRUSTLENS_PROD_MODE", "").strip() == "1"
+    behind_proxy = os.environ.get("TRUSTLENS_BEHIND_TLS_PROXY", "").strip() == "1"
+    has_tls = bool(getattr(args, "ssl_keyfile", None) and getattr(args, "ssl_certfile", None))
+    if prod and not has_tls and not behind_proxy:
+        print(
+            "TRUSTLENS_PROD_MODE=1 refuses to start without TLS. "
+            "Provide --ssl-keyfile/--ssl-certfile, or set "
+            "TRUSTLENS_BEHIND_TLS_PROXY=1 if a TLS-terminating proxy is in front.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
+
+def _uvicorn_kwargs(args: argparse.Namespace) -> dict:
+    kw: dict = {"host": args.host, "port": args.port}
+    if getattr(args, "ssl_keyfile", None):
+        kw["ssl_keyfile"] = args.ssl_keyfile
+    if getattr(args, "ssl_certfile", None):
+        kw["ssl_certfile"] = args.ssl_certfile
+    return kw
+
+
 def _cmd_serve_verifier(args: argparse.Namespace) -> int:
     try:
         import uvicorn  # noqa: F401
     except ImportError:
         print("uvicorn not installed", file=sys.stderr)
         return 2
+    _assert_tls_or_dev(args)
     os.environ["TRUSTLENS_AUTOSTART"] = "1"
     from trustlens.verifier.service import _default_app  # type: ignore[attr-defined]
     import uvicorn
-    uvicorn.run(_default_app(), host=args.host, port=args.port)
+    uvicorn.run(_default_app(), **_uvicorn_kwargs(args))
     return 0
 
 
@@ -203,10 +228,12 @@ def _cmd_serve_gateway(args: argparse.Namespace) -> int:
         tenant_store=tenant_store,
         kb_index=kb_index,
     )
+    _assert_tls_or_dev(args)
     active = ", ".join(b.name for b in backends)
     print(json.dumps({"status": "starting", "backends": active,
-                      "host": args.host, "port": args.port}))
-    uvicorn.run(app, host=args.host, port=args.port)
+                      "host": args.host, "port": args.port,
+                      "tls": bool(getattr(args, "ssl_keyfile", None))}))
+    uvicorn.run(app, **_uvicorn_kwargs(args))
     return 0
 
 
@@ -269,6 +296,44 @@ def _cmd_sweep(args: argparse.Namespace) -> int:
     _json.dump(result.to_dict(), sys.stdout, indent=2)
     sys.stdout.write("\n")
     return 0
+
+
+def _agent_client(base_url: str, api_key: Optional[str]) -> "httpx.Client":
+    import httpx  # type: ignore
+    headers = {"Accept": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return httpx.Client(base_url=base_url.rstrip("/"), headers=headers, timeout=10.0)
+
+
+def _cmd_agent(args: argparse.Namespace) -> int:
+    """Call an agent control endpoint.
+
+    Example:
+        trustlens agent status --base-url https://gw.example.com --api-key sk_...
+    """
+    import json as _json
+    api_key = args.api_key or os.environ.get("TRUSTLENS_API_KEY")
+    client = _agent_client(args.base_url, api_key)
+    path = {
+        "status":       ("GET",  "/v1/agent/status"),
+        "capabilities": ("GET",  "/v1/agent/capabilities"),
+        "tenants":      ("GET",  "/v1/agent/tenants"),
+        "incidents":    ("GET",  "/v1/agent/incidents"),
+        "alerts":       ("GET",  "/v1/agent/alerts"),
+    }.get(args.action)
+    if path is None:
+        print(f"unknown action: {args.action}", file=sys.stderr)
+        return 2
+    method, url = path
+    r = client.request(method, url)
+    try:
+        body = r.json()
+    except ValueError:
+        body = {"status_code": r.status_code, "text": r.text[:1000]}
+    _json.dump(body, sys.stdout, indent=2, default=str)
+    sys.stdout.write("\n")
+    return 0 if r.status_code < 400 else 1
 
 
 # ---------------------------------------------------------------------------
@@ -467,6 +532,8 @@ def build_parser() -> argparse.ArgumentParser:
     sv = sub.add_parser("serve-verifier", help="start the verifier service")
     sv.add_argument("--host", default="0.0.0.0")
     sv.add_argument("--port", type=int, default=8080)
+    sv.add_argument("--ssl-keyfile", default=None, help="path to TLS private key PEM")
+    sv.add_argument("--ssl-certfile", default=None, help="path to TLS cert PEM")
     sv.set_defaults(func=_cmd_serve_verifier)
 
     sg = sub.add_parser("serve-gateway", help="start a demo gateway")
@@ -474,6 +541,8 @@ def build_parser() -> argparse.ArgumentParser:
     sg.add_argument("--port", type=int, default=8081)
     sg.add_argument("--signer-key", default="./.trustlens/signer.pem")
     sg.add_argument("--cert-store", default="./.trustlens/certs")
+    sg.add_argument("--ssl-keyfile", default=None, help="path to TLS private key PEM")
+    sg.add_argument("--ssl-certfile", default=None, help="path to TLS cert PEM")
     sg.set_defaults(func=_cmd_serve_gateway)
 
     cal = sub.add_parser("calibrate",
@@ -525,6 +594,17 @@ def build_parser() -> argparse.ArgumentParser:
                              help="diagnose the running gateway + suggest next steps")
     doctor.add_argument("--gateway-url", default=None)
     doctor.set_defaults(func=_cmd_doctor)
+
+    ag = sub.add_parser("agent",
+                        help="agent control surface (status, tenants, incidents, alerts)")
+    ag.add_argument("action",
+                    choices=["status", "capabilities", "tenants",
+                             "incidents", "alerts"])
+    ag.add_argument("--base-url", default="http://127.0.0.1:8081",
+                    help="gateway base URL")
+    ag.add_argument("--api-key", default=None,
+                    help="Bearer API key (defaults to $TRUSTLENS_API_KEY)")
+    ag.set_defaults(func=_cmd_agent)
 
     return p
 

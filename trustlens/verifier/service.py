@@ -13,6 +13,7 @@ signer keypair.
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 import uuid
@@ -20,6 +21,11 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
+
+from trustlens.utils.redact import redact_secrets
+
+
+logger = logging.getLogger(__name__)
 
 from trustlens.certificate.schema import Certificate, CertificatePayload
 from trustlens.certificate.signer import KeyPair, sign_certificate
@@ -84,7 +90,8 @@ def build_app(
     try:
         from trustlens.observability.metrics import Metrics
         metrics = Metrics()
-    except Exception:
+    except ImportError as e:
+        logger.info("prometheus metrics disabled: %s", type(e).__name__)
         metrics = None
 
     @app.get("/healthz", response_model=HealthReply)
@@ -96,7 +103,10 @@ def build_app(
     async def readyz() -> dict:
         if not breaker.allow():
             raise HTTPException(status_code=503, detail="circuit_open")
-        return {"status": "ready", "oracles": engine._oracles.names()}  # type: ignore[attr-defined]
+        oracles = engine._oracles.names()  # type: ignore[attr-defined]
+        if not oracles:
+            raise HTTPException(status_code=503, detail="no_oracles")
+        return {"status": "ready", "oracles": oracles}
 
     @app.post("/v1/verify", response_model=VerifyReply)
     async def verify(body: VerifyBody, request: Request) -> VerifyReply:
@@ -129,7 +139,13 @@ def build_app(
             breaker.record_failure()
             if metrics:
                 metrics.verifier_errors_total.labels(kind=type(e).__name__).inc()
-            raise HTTPException(status_code=500, detail=f"verify_failed: {e}") from e
+            logger.exception(
+                "verify_failed tenant=%s req_id=%s", body.tenant_id, req_id,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=redact_secrets(f"verify_failed: {type(e).__name__}"),
+            ) from e
 
         breaker.record_success()
         pipeline_ms = (time.perf_counter() - t0) * 1000.0
@@ -142,11 +158,15 @@ def build_app(
         cert = sign_certificate(result.payload, signer)
         try:
             store.put(cert)
-        except Exception:
+        except Exception as e:
             # Storage failures must not block response — they are eventually
             # consistent from the audit bucket's perspective.
             if metrics:
                 metrics.certificate_store_errors_total.inc()
+            logger.error(
+                "cert_store.put failed cert_id=%s err=%s",
+                cert.cert_id, type(e).__name__,
+            )
 
         if metrics:
             metrics.verify_latency_ms.labels(tenant=body.tenant_id).observe(pipeline_ms)
