@@ -54,9 +54,13 @@ otel = [
     "opentelemetry-api>=1.24",
     "opentelemetry-sdk>=1.24",
 ]
+# Model Context Protocol server (trustlens mcp serve)
+mcp = [
+    "mcp>=1.0",
+]
 # Install everything (dev / CI)
 all = [
-    "trustlens[nli,calibration,anthropic,sweep,otel]",
+    "trustlens[nli,calibration,anthropic,sweep,otel,mcp]",
 ]
 
 [project.scripts]

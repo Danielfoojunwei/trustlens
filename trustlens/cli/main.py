@@ -272,6 +272,163 @@ def _cmd_sweep(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Agentic commands
+# ---------------------------------------------------------------------------
+
+def _cmd_mcp_serve(args: argparse.Namespace) -> int:
+    """Run the MCP server. Default transport is stdio (Claude Desktop /
+    Code wires it up natively). Use sse/streamable-http for remote runs."""
+    try:
+        from trustlens.mcp.server import build_server
+    except ImportError as e:
+        print(f"MCP SDK not installed: {e}", file=sys.stderr)
+        print("→ pip install mcp", file=sys.stderr)
+        return 2
+    srv = build_server(
+        base_url=args.gateway_url, api_key=args.api_key,
+        tenant_id=args.tenant_id,
+    )
+    if args.transport == "stdio":
+        srv.run()                         # FastMCP defaults to stdio
+    elif args.transport == "sse":
+        srv.run(transport="sse")
+    else:
+        srv.run(transport="streamable-http")
+    return 0
+
+
+def _cmd_mcp_tools(args: argparse.Namespace) -> int:
+    """Print every MCP tool + a one-line description as JSON. Useful for
+    'what can I do via the MCP surface?' from any agent or shell."""
+    try:
+        from trustlens.mcp.server import build_server
+    except ImportError as e:
+        print(f"MCP SDK not installed: {e}", file=sys.stderr)
+        return 2
+    srv = build_server()
+    import asyncio, json as _json, inspect
+    async def _enum() -> list[dict]:
+        # FastMCP exposes the tools via list_tools() on the underlying server
+        items = await srv.list_tools()
+        out = []
+        for t in items:
+            doc = (t.description or "").strip()
+            first_line = doc.splitlines()[0] if doc else ""
+            out.append({"name": t.name, "summary": first_line})
+        return out
+    tools = asyncio.run(_enum())
+    print(_json.dumps({"n_tools": len(tools), "tools": tools}, indent=2))
+    return 0
+
+
+def _cmd_setup(args: argparse.Namespace) -> int:
+    """Interactive setup wizard. With --json, prints a setup status JSON
+    suitable for an agent to drive the conversation."""
+    import asyncio, json as _json
+    from trustlens.mcp.client import GatewayClient
+
+    async def _go() -> dict:
+        c = GatewayClient(base_url=args.gateway_url)
+        # 1. health
+        try:
+            health = await c.get("/healthz")
+        except Exception as e:
+            return {"status": "gateway_down",
+                    "next_action": "Run `trustlens serve-gateway` first.",
+                    "error": str(e), "base_url": c.base_url}
+        # 2. login as default owner
+        try:
+            await c.login("owner@trustlens.local", "trustlens")
+        except Exception as e:
+            return {"status": "login_failed", "error": str(e)}
+        # 3. setup_status equivalent
+        out = {"status": "ok",
+                "base_url": c.base_url, "gateway": health,
+                "checks": {}}
+        try: out["checks"]["kb_size"] = (await c.get(
+            f"/v1/kb/status?tenant_id={c.tenant_id}")).get("index_size", 0)
+        except Exception: out["checks"]["kb_size"] = 0
+        try:
+            prof = await c.get(f"/v1/admin/compliance/profile/{c.tenant_id}")
+            out["checks"]["legal_name_set"] = bool(prof.get("legal_name"))
+            out["checks"]["dpo_contact_set"] = bool(prof.get("dpo_contact"))
+        except Exception:
+            out["checks"]["legal_name_set"] = False
+            out["checks"]["dpo_contact_set"] = False
+        try: out["checks"]["risks_seeded"] = len(await c.get(
+            "/v1/admin/compliance/risks")) >= 6
+        except Exception: out["checks"]["risks_seeded"] = False
+        try: out["checks"]["retention_seeded"] = len(await c.get(
+            "/v1/admin/compliance/retention")) >= 6
+        except Exception: out["checks"]["retention_seeded"] = False
+
+        # Recommend next action
+        ck = out["checks"]
+        if ck["kb_size"] == 0:
+            out["next_action"] = "Load KB documents via `POST /v1/admin/kb/upsert` or the dashboard."
+        elif not ck["legal_name_set"]:
+            out["next_action"] = "Set the tenant compliance profile (legal_name, DPO contact)."
+        elif not ck["risks_seeded"]:
+            out["next_action"] = "Seed default AI risks: `POST /v1/admin/compliance/risks/seed`."
+        elif not ck["retention_seeded"]:
+            out["next_action"] = "Seed default retention policies."
+        else:
+            out["next_action"] = "Setup complete."
+        await c.close()
+        return out
+
+    result = asyncio.run(_go())
+    if args.json:
+        _json.dump(result, sys.stdout, indent=2); sys.stdout.write("\n")
+        return 0 if result.get("status") == "ok" else 1
+
+    # Interactive output
+    print(f"\n  TrustLens setup status — gateway @ {result.get('base_url')}\n")
+    if result.get("status") != "ok":
+        print(f"  ✗ {result.get('status')}")
+        print(f"  → {result.get('next_action', 'investigate the error')}")
+        if "error" in result:
+            print(f"    error: {result['error']}")
+        return 1
+    for k, v in result["checks"].items():
+        sym = "✓" if v else "○"
+        print(f"  {sym}  {k:<28} = {v}")
+    print(f"\n  → next action: {result['next_action']}\n")
+    return 0
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    """Print a structured diagnostic JSON of the running gateway."""
+    import asyncio, json as _json
+    from trustlens.mcp.client import GatewayClient
+    async def _go() -> dict:
+        c = GatewayClient(base_url=args.gateway_url)
+        out: dict = {"base_url": c.base_url, "tenant_id": c.tenant_id}
+        for path, key in [
+            ("/healthz",                              "health"),
+            ("/readyz",                               "ready"),
+            ("/openapi.json",                         "_openapi"),
+            ("/v1/admin/compliance/audit-log/verify", "audit_chain"),
+            ("/v1/admin/compliance/overview",         "compliance"),
+        ]:
+            try:
+                out[key] = await c.get(path)
+            except Exception as e:
+                out[key] = {"error": str(e)}
+        # Trim openapi for readability
+        if isinstance(out.get("_openapi"), dict):
+            out["openapi_paths"] = sorted((out["_openapi"].get("paths") or {}).keys())
+            out.pop("_openapi", None)
+        await c.close()
+        return out
+    result = asyncio.run(_go())
+    _json.dump(result, sys.stdout, indent=2); sys.stdout.write("\n")
+    chain_ok = (isinstance(result.get("audit_chain"), dict)
+                and result["audit_chain"].get("ok") is True)
+    return 0 if chain_ok else 1
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -333,6 +490,41 @@ def build_parser() -> argparse.ArgumentParser:
     sw.add_argument("--n-samples", type=int, default=20,
                     help="samples per axis per alpha point")
     sw.set_defaults(func=_cmd_sweep)
+
+    # ---------- agentic commands ----------
+    mcp_p = sub.add_parser("mcp",
+                            help="Model Context Protocol server (agent control plane)")
+    mcp_sub = mcp_p.add_subparsers(dest="mcp_cmd", required=True)
+    mcp_serve = mcp_sub.add_parser("serve", help="serve the MCP tool surface")
+    mcp_serve.add_argument("--transport", default="stdio",
+                            choices=["stdio", "sse", "streamable-http"],
+                            help="transport — stdio for Claude Desktop / Code, sse/http for remote")
+    mcp_serve.add_argument("--port", type=int, default=8090)
+    mcp_serve.add_argument("--gateway-url", default=None,
+                            help="base URL of the TrustLens gateway "
+                                 "(default: $TRUSTLENS_BASE_URL or http://127.0.0.1:8081)")
+    mcp_serve.add_argument("--api-key", default=None,
+                            help="bearer token for the gateway "
+                                 "(default: $TRUSTLENS_API_KEY)")
+    mcp_serve.add_argument("--tenant-id", default=None,
+                            help="default tenant header (default: $TRUSTLENS_TENANT_ID or 'demo')")
+    mcp_serve.set_defaults(func=_cmd_mcp_serve)
+
+    mcp_tools = mcp_sub.add_parser("tools",
+                                    help="list every tool the MCP server exposes")
+    mcp_tools.set_defaults(func=_cmd_mcp_tools)
+
+    setup = sub.add_parser("setup",
+                            help="interactive setup wizard (works with --json for agents)")
+    setup.add_argument("--gateway-url", default=None)
+    setup.add_argument("--json", action="store_true",
+                        help="emit machine-readable JSON instead of asking interactively")
+    setup.set_defaults(func=_cmd_setup)
+
+    doctor = sub.add_parser("doctor",
+                             help="diagnose the running gateway + suggest next steps")
+    doctor.add_argument("--gateway-url", default=None)
+    doctor.set_defaults(func=_cmd_doctor)
 
     return p
 

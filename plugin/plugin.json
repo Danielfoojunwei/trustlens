@@ -1,0 +1,36 @@
+{
+  "name": "trustlens",
+  "version": "1.0.0",
+  "description": "Universal LLM safety layer — install, operate, audit, and tune TrustLens directly from any agentic harness (Claude Code, Claude Desktop, Cursor). Includes an MCP server, 7 skills covering setup → verification → KB → compliance → Deep Inspector → ops → incidents, and a hooks bundle.",
+  "homepage": "https://github.com/Danielfoojunwei/trustlens",
+  "license": "Apache-2.0",
+  "keywords": ["llm", "safety", "hallucination", "verification", "compliance", "ed25519", "mcp"],
+  "mcp_servers": [
+    {
+      "name": "trustlens",
+      "description": "TrustLens control plane — ~40 agent-callable tools for setup, KB management, verification, compliance, Deep Inspector, incidents, and ops.",
+      "command": "trustlens",
+      "args": ["mcp", "serve", "--transport", "stdio"],
+      "env": {
+        "TRUSTLENS_BASE_URL":  "${TRUSTLENS_BASE_URL:-http://127.0.0.1:8081}",
+        "TRUSTLENS_TENANT_ID": "${TRUSTLENS_TENANT_ID:-demo}"
+      }
+    }
+  ],
+  "skills": [
+    {"name": "trustlens-setup",          "path": "skills/trustlens-setup/SKILL.md"},
+    {"name": "trustlens-verify",         "path": "skills/trustlens-verify/SKILL.md"},
+    {"name": "trustlens-kb",             "path": "skills/trustlens-kb/SKILL.md"},
+    {"name": "trustlens-compliance",     "path": "skills/trustlens-compliance/SKILL.md"},
+    {"name": "trustlens-deep-inspector", "path": "skills/trustlens-deep-inspector/SKILL.md"},
+    {"name": "trustlens-ops",            "path": "skills/trustlens-ops/SKILL.md"},
+    {"name": "trustlens-incident",       "path": "skills/trustlens-incident/SKILL.md"}
+  ],
+  "agent_safety": {
+    "destructive_tools": [
+      "kb_delete", "kb_revert", "key_revoke", "user_delete",
+      "breach_close", "dsar_reject", "retention_set"
+    ],
+    "always_confirm_with_user": true
+  }
+}
