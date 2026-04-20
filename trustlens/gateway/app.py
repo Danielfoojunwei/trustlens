@@ -625,7 +625,7 @@ def build_gateway(
             elif annotation.certificate_status == "degraded":
                 incidents.record(
                     kind="oracle.slow", severity=Severity.INFO,
-                    title=f"degraded verification path",
+                    title="degraded verification path",
                     tenant_id=tenant.tenant_id, cert_id=annotation.certificate_id,
                     detail={"degradations": annotation.degradations},
                 )

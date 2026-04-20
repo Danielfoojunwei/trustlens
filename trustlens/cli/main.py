@@ -298,7 +298,7 @@ def _cmd_sweep(args: argparse.Namespace) -> int:
     return 0
 
 
-def _agent_client(base_url: str, api_key: Optional[str]) -> "httpx.Client":
+def _agent_client(base_url: str, api_key: Optional[str]):
     import httpx  # type: ignore
     headers = {"Accept": "application/json"}
     if api_key:
