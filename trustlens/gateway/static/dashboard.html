@@ -1,0 +1,3425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TRUSTLENS · OPERATOR</title>
+<style>
+  :root {
+    --bg: #000;
+    --fg: #fff;
+    --d1: #bbb;
+    --d2: #888;
+    --d3: #555;
+    --d4: #222;
+    --d5: #111;
+    --mono: "JetBrains Mono","SF Mono","Menlo","Consolas","Courier New",monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%; margin: 0; padding: 0;
+    background: var(--bg); color: var(--fg);
+    font-family: var(--mono);
+    font-size: 12px; line-height: 1.45;
+    -webkit-font-smoothing: none; font-smoothing: none;
+  }
+  a { color: var(--fg); text-decoration: underline; }
+  a:hover { background: var(--fg); color: var(--bg); text-decoration: none; }
+  button, input, select, textarea {
+    font: inherit; color: inherit; background: transparent;
+    border: 1px solid var(--d3);
+  }
+  button { padding: 2px 10px; cursor: pointer; }
+  button:hover:not(:disabled) { background: var(--fg); color: var(--bg); }
+  button:disabled { opacity: .3; cursor: not-allowed; }
+  input[type=text], input[type=number], select, textarea {
+    padding: 3px 6px; width: 100%;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: 1px solid var(--fg); outline-offset: -1px;
+  }
+  textarea { resize: vertical; min-height: 60px; font-family: var(--mono); }
+  label {
+    display: block; color: var(--d1); font-size: 10.5px;
+    margin-bottom: 2px; letter-spacing: .06em;
+  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--d5); }
+  ::-webkit-scrollbar-thumb { background: var(--d3); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--d1); }
+
+  /* ──────────────────────────────── LAYOUT ───────────────────────────── */
+  .app {
+    display: grid;
+    grid-template-rows: 22px 1fr 20px;
+    grid-template-columns: 160px 1fr 320px;
+    grid-template-areas:
+      "topbar topbar topbar"
+      "nav    main   logs"
+      "status status status";
+    height: 100vh;
+  }
+  .topbar {
+    grid-area: topbar; border-bottom: 1px solid var(--d3);
+    display: flex; align-items: center; padding: 0 10px; gap: 18px;
+    font-size: 11.5px; letter-spacing: .03em;
+  }
+  .topbar .brand { font-weight: 700; letter-spacing: .12em; }
+  .topbar .sp { flex: 1; }
+  .topbar .kv { color: var(--d1); }
+  .topbar .kv b { color: var(--fg); font-weight: 500; }
+  .topbar select { border: none; padding: 0 3px; font-size: 11.5px; }
+
+  .nav {
+    grid-area: nav; border-right: 1px solid var(--d3); padding: 4px 0;
+    overflow-y: auto;
+  }
+  .nav .item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 10px; cursor: pointer;
+    letter-spacing: .08em; font-size: 11.5px;
+    border-left: 2px solid transparent;
+  }
+  .nav .item:hover { background: var(--d5); }
+  .nav .item.active {
+    border-left-color: var(--fg); background: var(--d5);
+  }
+  .nav .marker { display: inline-block; width: 12px; color: var(--d2); }
+  .nav .item.active .marker { color: var(--fg); }
+  .nav .section-title {
+    color: var(--d2); padding: 10px 10px 2px 10px;
+    font-size: 9.5px; letter-spacing: .18em;
+  }
+
+  .main {
+    grid-area: main; padding: 12px 14px;
+    overflow-y: auto; overflow-x: hidden;
+  }
+  .logs {
+    grid-area: logs; border-left: 1px solid var(--d3);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .logs-head {
+    padding: 4px 10px; border-bottom: 1px solid var(--d3);
+    display: flex; align-items: center; gap: 8px;
+    font-size: 10.5px; color: var(--d1); letter-spacing: .1em;
+  }
+  .logs-head .sp { flex: 1; }
+  .logs-head input[type=text] { width: 110px; font-size: 10.5px; }
+  .logs-body {
+    flex: 1; overflow-y: auto; padding: 4px 8px;
+    font-size: 11px; line-height: 1.35;
+  }
+  .log-row {
+    white-space: pre-wrap; word-break: break-all;
+    padding: 1px 0; border-bottom: 1px dotted var(--d4);
+  }
+  .log-row.err { }
+  .log-row .t  { color: var(--d1); }
+  .log-row .k  { color: var(--d2); }
+  .log-row .p  { color: var(--fg); }
+  .log-row.err .p { text-decoration: underline; }
+
+  .status {
+    grid-area: status; border-top: 1px solid var(--d3);
+    display: flex; align-items: center; padding: 0 10px; gap: 18px;
+    font-size: 10.5px; color: var(--d1); letter-spacing: .04em;
+  }
+  .status .dot { width: 6px; height: 6px; background: var(--fg); display: inline-block; }
+  .status .dot.off { background: var(--d3); }
+  .status .sp { flex: 1; }
+
+  /* ────────────────────────────── WIDGETS ─────────────────────────────── */
+  .h1 {
+    font-size: 13px; letter-spacing: .18em; color: var(--fg);
+    margin: 0 0 10px; padding-bottom: 4px; border-bottom: 1px solid var(--d3);
+  }
+  .h1 .sub { color: var(--d2); letter-spacing: .04em; font-size: 10.5px; margin-left: 10px; }
+  .h2 {
+    font-size: 11px; letter-spacing: .12em; color: var(--d1);
+    margin: 14px 0 6px; text-transform: uppercase;
+  }
+  .grid { display: grid; gap: 8px; }
+  .g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .sp { flex: 1; }
+  .muted { color: var(--d2); }
+  .dim { color: var(--d1); }
+  .small { font-size: 10.5px; }
+
+  .panel { border: 1px solid var(--d3); padding: 8px 10px; }
+  .panel .title {
+    font-size: 10px; letter-spacing: .18em; color: var(--d1);
+    margin-bottom: 4px;
+  }
+  .kpi .val {
+    font-size: 20px; letter-spacing: .02em;
+    line-height: 1.2;
+  }
+  .kpi .unit { font-size: 11px; color: var(--d1); margin-left: 4px; }
+  .kpi .sub  { font-size: 10.5px; color: var(--d2); }
+
+  table.t {
+    width: 100%; border-collapse: collapse; font-size: 11px;
+  }
+  table.t th, table.t td {
+    text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--d4);
+    white-space: nowrap;
+  }
+  table.t th { color: var(--d1); font-weight: 400; letter-spacing: .08em; border-bottom-color: var(--d3); }
+  table.t tr.clk { cursor: pointer; }
+  table.t tr.clk:hover td { background: var(--d5); }
+
+  .badge {
+    display: inline-block; padding: 0 6px;
+    border: 1px solid var(--d3); font-size: 10px; letter-spacing: .06em;
+  }
+  .badge.on  { border-color: var(--fg); color: var(--fg); }
+  .badge.off { border-color: var(--d3); color: var(--d2); }
+
+  .sev { letter-spacing: .04em; }
+  .sev-verified  { }
+  .sev-partial   { }
+  .sev-blocked   { }
+  .sev-degraded  { }
+  .sev .m { display: inline-block; width: 12px; text-align: center; }
+
+  svg.chart { width: 100%; display: block; }
+  svg.chart .grid { stroke: var(--d4); stroke-width: 1; }
+  svg.chart .axis { stroke: var(--d3); stroke-width: 1; }
+  svg.chart .line { stroke: var(--fg); stroke-width: 1.2; fill: none; }
+  svg.chart .line2 { stroke: var(--d1); stroke-width: 1; fill: none; stroke-dasharray: 3 2; }
+  svg.chart .bar  { fill: var(--fg); }
+  svg.chart .bar2 { fill: var(--d2); }
+  svg.chart .lbl  { fill: var(--d1); font-size: 9px; font-family: var(--mono); }
+  svg.chart .lblfg{ fill: var(--fg); font-size: 10px; font-family: var(--mono); }
+
+  .hidden { display: none !important; }
+
+  .divider { height: 1px; background: var(--d3); margin: 10px 0; }
+
+  .inline-btns button { margin-right: 4px; }
+
+  .slider {
+    appearance: none; -webkit-appearance: none;
+    width: 100%; height: 2px; background: var(--d3); outline: none;
+  }
+  .slider::-webkit-slider-thumb {
+    appearance: none; -webkit-appearance: none;
+    width: 10px; height: 14px; background: var(--fg);
+    border: 1px solid var(--d3); cursor: pointer;
+  }
+  .slider::-moz-range-thumb {
+    width: 10px; height: 14px; background: var(--fg);
+    border: 1px solid var(--d3); cursor: pointer;
+  }
+
+  .modal-scrim {
+    position: fixed; inset: 0; background: rgba(0,0,0,.88);
+    display: none; align-items: center; justify-content: center; z-index: 10;
+  }
+  .modal-scrim.open { display: flex; }
+  .modal {
+    background: var(--bg); border: 1px solid var(--fg);
+    width: min(980px, 96vw); max-height: 90vh; overflow: auto;
+    padding: 14px 16px;
+  }
+  .modal .hd { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .modal pre { white-space: pre-wrap; word-break: break-all; margin: 0; }
+
+  .kbd {
+    display: inline-block; padding: 0 4px; border: 1px solid var(--d3);
+    font-size: 10.5px; color: var(--d1);
+  }
+
+  .chip-row { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { border: 1px solid var(--d3); padding: 0 6px; font-size: 10.5px; }
+  .chip.on { border-color: var(--fg); color: var(--fg); }
+
+  .progress {
+    display: inline-block; width: 100px; height: 6px;
+    background: var(--d4); border: 1px solid var(--d3); vertical-align: middle;
+  }
+  .progress > span { display: block; height: 100%; background: var(--fg); }
+  .bar-row { display: flex; align-items: center; gap: 8px; font-size: 11px; padding: 1px 0; }
+  .bar-row .lbl { width: 100px; color: var(--d1); }
+  .bar-row .val { width: 60px; text-align: right; }
+
+  /* ────────────────── LOGIN + GAUGE COMPONENTS ────────────────── */
+  .login-scrim {
+    position: fixed; inset: 0; background: #000;
+    display: flex; align-items: center; justify-content: center; z-index: 20;
+  }
+  .login-card {
+    width: 420px; border: 1px solid var(--fg); padding: 18px 22px;
+  }
+  .login-card h1 {
+    font-size: 14px; letter-spacing: .22em; margin: 0 0 14px;
+  }
+  .login-card .row-gap { margin-top: 8px; }
+  .login-card .err { color: var(--fg); border: 1px solid var(--fg); padding: 4px 6px; }
+  .login-card .muted-note { color: var(--d1); font-size: 10.5px; line-height: 1.5; margin-top: 10px; }
+
+  .gauge { position: relative; width: 100%; aspect-ratio: 1.4 / 1; }
+  .gauge svg { width: 100%; height: 100%; }
+  .gauge .val { position: absolute; left: 0; right: 0; bottom: 6px;
+                text-align: center; font-size: 22px; letter-spacing: .02em; }
+  .gauge .lbl { position: absolute; left: 0; right: 0; top: 4px;
+                text-align: center; color: var(--d1); font-size: 10.5px;
+                letter-spacing: .18em; }
+
+  .sev-warn     { color: var(--fg); }
+  .sev-critical { color: var(--fg); }
+  .sev-info     { color: var(--d1); }
+
+  .nav .item.locked { opacity: .35; cursor: not-allowed; }
+  .nav .item.locked:hover { background: transparent; }
+
+  .kv-table th { color: var(--d1); letter-spacing: .06em; text-align: left; font-weight: 400; padding: 3px 8px; }
+  .kv-table td { padding: 3px 8px; border-bottom: 1px solid var(--d4); }
+
+  .toggle {
+    display: inline-block; width: 38px; height: 14px;
+    border: 1px solid var(--d3); cursor: pointer; position: relative;
+  }
+  .toggle::after {
+    content: ""; position: absolute; top: 1px; left: 1px;
+    width: 10px; height: 10px; background: var(--d3);
+  }
+  .toggle.on { border-color: var(--fg); }
+  .toggle.on::after { background: var(--fg); left: 25px; }
+
+  .diff-add { }
+  .diff-rm  { text-decoration: line-through; color: var(--d1); }
+
+  .secret-box {
+    font-family: var(--mono); border: 1px solid var(--fg);
+    padding: 4px 6px; word-break: break-all; user-select: all;
+  }
+</style>
+</head>
+<body>
+
+<!-- ─────────────────────────── LOGIN OVERLAY ─────────────────────────── -->
+<div class="login-scrim hidden" id="login-scrim">
+  <div class="login-card">
+    <h1>∎ TRUSTLENS · OPERATOR LOGIN</h1>
+    <label>EMAIL</label>
+    <input type="text" id="lg-email" value="owner@trustlens.local" />
+    <label class="row-gap">PASSWORD</label>
+    <input type="password" id="lg-pass" value="trustlens" />
+    <div class="row row-gap">
+      <button id="lg-btn" class="primary">► SIGN IN</button>
+      <span class="sp"></span>
+      <button id="lg-oidc">SIGN IN · OIDC</button>
+    </div>
+    <div id="lg-err" class="err hidden row-gap"></div>
+    <div class="muted-note">
+      DEV BOOTSTRAP · 3 seeded accounts
+      <div>owner@trustlens.local / <b>trustlens</b>       · role owner</div>
+      <div>operator@trustlens.local / <b>operator</b>     · role operator</div>
+      <div>viewer@trustlens.local / <b>viewer</b>         · role viewer</div>
+      <div style="margin-top:6px">change via <code>TRUSTLENS_BOOTSTRAP_*</code> env vars or the USERS admin page</div>
+    </div>
+  </div>
+</div>
+
+<div class="app" id="app">
+
+  <!-- ──────────────────────────── TOP BAR ──────────────────────────── -->
+  <div class="topbar">
+    <span class="brand">∎ TRUSTLENS</span>
+    <span class="kv">tenant: <select id="ten-sel"><option value="demo">demo</option></select></span>
+    <span class="kv">gateway: <span id="gw-dot" class="badge on">● ok</span></span>
+    <span class="kv">pipe: <b id="kv-pipe">1.0.0</b></span>
+    <span class="sp"></span>
+    <span class="kv">user: <b id="kv-user">-</b></span>
+    <span class="kv">role: <b id="kv-role">-</b></span>
+    <span class="kv">utc: <b id="kv-utc">--:--:--</b></span>
+    <button id="btn-signout" title="sign out">⎋</button>
+  </div>
+
+  <!-- ─────────────────────────────── NAV ─────────────────────────────── -->
+  <div class="nav">
+    <div class="section-title">MONITOR</div>
+    <div class="item active" data-view="overview"    data-perm="view.overview"><span class="marker">▶</span>OVERVIEW</div>
+    <div class="item"         data-view="reduction"  data-perm="view.analytics"><span class="marker">·</span>REDUCTION</div>
+    <div class="item"         data-view="axes"       data-perm="view.axes"><span class="marker">·</span>3-AXIS LIVE</div>
+    <div class="item"         data-view="analytics"  data-perm="view.analytics"><span class="marker">·</span>ANALYTICS</div>
+    <div class="item"         data-view="incidents"  data-perm="view.incidents"><span class="marker">·</span>INCIDENTS</div>
+    <div class="section-title">CONTROL</div>
+    <div class="item"         data-view="playground" data-perm="view.overview"><span class="marker">·</span>PLAYGROUND</div>
+    <div class="item"         data-view="tuning"     data-perm="verifier.tune"><span class="marker">·</span>τ-TUNING</div>
+    <div class="item"         data-view="settings"   data-perm="verifier.settings"><span class="marker">·</span>FEATURE SETTINGS</div>
+    <div class="section-title">DATA</div>
+    <div class="item"         data-view="certs"      data-perm="view.certs"><span class="marker">·</span>CERTIFICATES</div>
+    <div class="item"         data-view="kb"         data-perm="kb.read"><span class="marker">·</span>KNOWLEDGE BASE</div>
+    <div class="item"         data-view="tenants"    data-perm="view.overview"><span class="marker">·</span>TENANTS</div>
+    <div class="section-title">ADMIN</div>
+    <div class="item"         data-view="users"      data-perm="users.read"><span class="marker">·</span>USERS &amp; ROLES</div>
+    <div class="item"         data-view="keys"       data-perm="apikeys.read"><span class="marker">·</span>API KEYS</div>
+    <div class="item"         data-view="integrations" data-perm="integrations.read"><span class="marker">·</span>INTEGRATIONS</div>
+    <div class="section-title">COMPLIANCE</div>
+    <div class="item"         data-view="comp_overview"  data-perm="view.overview"><span class="marker">·</span>FRAMEWORK GRID</div>
+    <div class="item"         data-view="comp_audit"     data-perm="view.overview"><span class="marker">·</span>AUDIT LOG (∎)</div>
+    <div class="item"         data-view="comp_dsar"      data-perm="view.incidents"><span class="marker">·</span>DSAR QUEUE</div>
+    <div class="item"         data-view="comp_consent"   data-perm="view.overview"><span class="marker">·</span>CONSENT</div>
+    <div class="item"         data-view="comp_retention" data-perm="view.overview"><span class="marker">·</span>RETENTION</div>
+    <div class="item"         data-view="comp_breach"    data-perm="view.incidents"><span class="marker">·</span>BREACH REPORTS</div>
+    <div class="item"         data-view="comp_risks"     data-perm="view.overview"><span class="marker">·</span>RISK REGISTER</div>
+    <div class="item"         data-view="comp_cards"     data-perm="view.overview"><span class="marker">·</span>MODEL CARDS</div>
+    <div class="item"         data-view="comp_profile"   data-perm="view.overview"><span class="marker">·</span>TENANT PROFILE</div>
+    <div class="section-title">AUDIT</div>
+    <div class="item"         data-view="verify"     data-perm="view.certs"><span class="marker">·</span>OFFLINE VERIFY</div>
+    <div class="section-title"></div>
+    <div style="padding:8px 10px;color:var(--d2);font-size:10px">
+      <div>[?] keyboard: j/k rows</div>
+      <div>[/] focus search</div>
+      <div>[e] export view</div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────── MAIN ────────────────────────────── -->
+  <div class="main" id="main">
+
+    <!-- ─── OVERVIEW ─── -->
+    <section data-view="overview">
+      <div class="h1">▓ OVERVIEW <span class="sub">last 5 min rolling window · auto-refresh 2s</span></div>
+
+      <div class="grid g4">
+        <div class="panel kpi">
+          <div class="title">REQ/MIN</div>
+          <div class="val" id="kpi-reqmin">—</div>
+          <div class="sub" id="kpi-reqtotal">0 total</div>
+        </div>
+        <div class="panel kpi">
+          <div class="title">VERIFY p99</div>
+          <div class="val"><span id="kpi-p99">—</span><span class="unit">ms</span></div>
+          <div class="sub"><span id="kpi-p50">—</span>ms p50 · <span id="kpi-p95">—</span>ms p95</div>
+        </div>
+        <div class="panel kpi">
+          <div class="title">BLOCK RATE</div>
+          <div class="val" id="kpi-block">—</div>
+          <div class="sub">hallucinations caught / all certs</div>
+        </div>
+        <div class="panel kpi">
+          <div class="title">ERROR RATE</div>
+          <div class="val" id="kpi-err">—</div>
+          <div class="sub"><span id="kpi-errn">0</span> errors · <span id="kpi-certn">0</span> certs</div>
+        </div>
+      </div>
+
+      <div class="h2">TIME SERIES · last 5 min</div>
+      <div class="grid g2">
+        <div class="panel">
+          <div class="title">REQUESTS / 10s</div>
+          <svg class="chart" id="ch-req" viewBox="0 0 400 80" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="panel">
+          <div class="title">VERIFY p99 ms / 10s</div>
+          <svg class="chart" id="ch-p99" viewBox="0 0 400 80" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="panel">
+          <div class="title">CERTS / 10s</div>
+          <svg class="chart" id="ch-cert" viewBox="0 0 400 80" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="panel">
+          <div class="title">ERRORS / 10s</div>
+          <svg class="chart" id="ch-err" viewBox="0 0 400 80" preserveAspectRatio="none"></svg>
+        </div>
+      </div>
+
+      <div class="h2">CERT STATUS MIX · <span class="muted">breakdown by verdict</span></div>
+      <div class="panel">
+        <div id="status-mix"></div>
+      </div>
+
+      <div class="h2">RECENT CERTIFICATES
+        <span class="muted">· newest first</span>
+        <button class="small" id="btn-export-certs" style="float:right">↓ CSV</button>
+      </div>
+      <div class="panel" style="padding:0">
+        <table class="t" id="recent-certs">
+          <thead><tr>
+            <th>ISSUED</th><th>TENANT</th><th>CERT ID</th>
+            <th>STATUS</th><th>CLAIMS</th><th>RNDR</th><th>MODEL</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── REDUCTION ─── -->
+    <section data-view="reduction" class="hidden">
+      <div class="h1">▓ HALLUCINATION REDUCTION <span class="sub">with/without TrustLens comparison</span></div>
+
+      <div class="grid g3">
+        <div class="panel kpi">
+          <div class="title">CERTS OBSERVED</div>
+          <div class="val" id="rd-total">0</div>
+          <div class="sub" id="rd-window">last 5 min</div>
+        </div>
+        <div class="panel kpi">
+          <div class="title">BLOCKED</div>
+          <div class="val" id="rd-blocked">0</div>
+          <div class="sub">hallucinations prevented from reaching users</div>
+        </div>
+        <div class="panel kpi">
+          <div class="title">LEAK REDUCTION FACTOR</div>
+          <div class="val" id="rd-factor">—</div>
+          <div class="sub">vs published 25–40% baseline</div>
+        </div>
+      </div>
+
+      <div class="h2">SIDE-BY-SIDE · WITHOUT vs WITH TRUSTLENS</div>
+      <div class="panel">
+        <div class="small muted" style="margin-bottom:6px">
+          Assumes 25% baseline hallucination rate on adversarial grounded-QA.
+          Adjust with the slider below. Numbers are computed from live cert stream.
+        </div>
+        <div class="row" style="gap:20px;align-items:baseline">
+          <label style="display:flex;gap:8px;align-items:center">baseline %
+            <input type="range" class="slider" id="rd-baseline" min="5" max="60" step="1" value="25" style="width:200px">
+            <span id="rd-baseline-v">25%</span>
+          </label>
+        </div>
+        <div class="divider"></div>
+        <svg class="chart" id="ch-reduction" viewBox="0 0 600 160" preserveAspectRatio="none"></svg>
+      </div>
+
+      <div class="h2">VERIFICATION PIPELINE CONTRIBUTION</div>
+      <div class="panel">
+        <div class="small muted" style="margin-bottom:6px">
+          Which product feature caught each blocked/contradicted claim. Aggregated over last window.
+        </div>
+        <div id="rd-feature-bars"></div>
+      </div>
+
+      <div class="h2">CLAIM VERDICT DISTRIBUTION · STACKED</div>
+      <div class="panel">
+        <svg class="chart" id="ch-verdicts" viewBox="0 0 600 120" preserveAspectRatio="none"></svg>
+        <div class="chip-row" style="margin-top:6px">
+          <span class="chip">■ verified</span>
+          <span class="chip">□ partial</span>
+          <span class="chip">▨ blocked</span>
+          <span class="chip">◇ degraded</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── ANALYTICS ─── -->
+    <section data-view="analytics" class="hidden">
+      <div class="h1">▓ ANALYTICS <span class="sub">exportable time-series</span></div>
+
+      <div class="panel" style="margin-bottom:8px">
+        <div class="row">
+          <label style="min-width:120px">WINDOW
+            <select id="an-window">
+              <option value="60">60 s</option>
+              <option value="300" selected>5 min</option>
+              <option value="900">15 min</option>
+              <option value="3600">1 hour</option>
+            </select>
+          </label>
+          <label style="min-width:120px">BUCKET
+            <select id="an-bucket">
+              <option value="1">1 s</option>
+              <option value="5">5 s</option>
+              <option value="10" selected>10 s</option>
+              <option value="60">60 s</option>
+            </select>
+          </label>
+          <span class="sp"></span>
+          <button id="btn-an-csv">↓ CSV</button>
+          <button id="btn-an-json">↓ JSON</button>
+          <button id="btn-an-png">↓ PNG</button>
+          <button id="btn-an-refresh">↻ refresh</button>
+        </div>
+      </div>
+
+      <div class="grid g2">
+        <div class="panel">
+          <div class="title">REQUESTS / BUCKET</div>
+          <svg class="chart" id="an-req" viewBox="0 0 500 140" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="panel">
+          <div class="title">VERIFY p99 / BUCKET (ms)</div>
+          <svg class="chart" id="an-p99" viewBox="0 0 500 140" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="panel">
+          <div class="title">CERTS / BUCKET</div>
+          <svg class="chart" id="an-cert" viewBox="0 0 500 140" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="panel">
+          <div class="title">ERRORS / BUCKET</div>
+          <svg class="chart" id="an-err" viewBox="0 0 500 140" preserveAspectRatio="none"></svg>
+        </div>
+      </div>
+
+      <div class="h2">RAW METRICS SNAPSHOT</div>
+      <div class="panel" style="padding:0;overflow:auto">
+        <table class="t" id="an-table">
+          <thead><tr>
+            <th>BUCKET UTC</th><th>REQS</th><th>CERTS</th><th>ERRORS</th><th>p99 ms</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── PLAYGROUND ─── -->
+    <section data-view="playground" class="hidden">
+      <div class="h1">▓ PLAYGROUND <span class="sub">craft a request · see the cert live</span></div>
+
+      <div class="grid g2">
+        <div class="panel">
+          <div class="title">REQUEST</div>
+          <label>MODEL</label>
+          <input type="text" id="pg-model" value="echo" />
+          <label style="margin-top:6px">TENANT</label>
+          <select id="pg-tenant"><option value="demo">demo</option></select>
+          <label style="margin-top:6px">TIER</label>
+          <select id="pg-tier">
+            <option value="">— default (tenant) —</option>
+            <option value="fast">fast  (≤30ms,  no oracles)</option>
+            <option value="standard">standard (≤100ms, KB only)</option>
+            <option value="deep">deep  (≤500ms, KB+wiki+ssh)</option>
+          </select>
+
+          <div class="grid g2" style="margin-top:6px">
+            <div>
+              <label>τ support <span id="pg-tau-v" class="dim">0.40</span></label>
+              <input type="range" class="slider" id="pg-tau" min="0" max="1" step="0.01" value="0.40">
+            </div>
+            <div>
+              <label>τ′ contradiction <span id="pg-taup-v" class="dim">0.10</span></label>
+              <input type="range" class="slider" id="pg-taup" min="0" max="0.6" step="0.01" value="0.10">
+            </div>
+          </div>
+
+          <label style="margin-top:6px">PROMPT</label>
+          <textarea id="pg-prompt" rows="5">What is the capital of France?</textarea>
+
+          <div class="row" style="margin-top:6px">
+            <label style="display:flex;gap:6px;align-items:center;margin:0">
+              <input type="checkbox" id="pg-stream" checked /> stream (SSE)
+            </label>
+            <span class="sp"></span>
+            <button id="pg-send">► SEND</button>
+            <button id="pg-clear">CLEAR</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="title">RESPONSE</div>
+          <div class="small muted" id="pg-meta">—</div>
+          <div class="divider"></div>
+          <div id="pg-out" style="white-space:pre-wrap;min-height:120px"></div>
+          <div class="divider"></div>
+          <div class="title">CERTIFICATE</div>
+          <div id="pg-cert"><span class="muted">no cert yet</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── TUNING ─── -->
+    <section data-view="tuning" class="hidden">
+      <div class="h1">▓ τ-TUNING <span class="sub">sweep support/contradiction thresholds against the same prompt</span></div>
+
+      <div class="panel">
+        <div class="grid g2">
+          <div>
+            <label>PROMPT</label>
+            <textarea id="tn-prompt" rows="3">What is the capital of France?</textarea>
+          </div>
+          <div>
+            <label>τ SWEEP (comma-separated)</label>
+            <input type="text" id="tn-taus" value="0.10, 0.30, 0.55, 0.70, 0.85" />
+            <label style="margin-top:6px">MODEL</label>
+            <input type="text" id="tn-model" value="echo" />
+            <label style="margin-top:6px">TENANT</label>
+            <select id="tn-tenant"><option value="demo">demo</option></select>
+          </div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button id="tn-run">► RUN SWEEP</button>
+          <span class="sp"></span>
+          <button id="tn-export">↓ CSV</button>
+        </div>
+      </div>
+
+      <div class="h2">VERDICT MATRIX · rows=τ values, cols=claims</div>
+      <div class="panel" style="padding:0;overflow:auto">
+        <table class="t" id="tn-matrix">
+          <thead><tr><th>τ</th><th>STATUS</th><th>RENDER HASH</th><th>VERDICTS</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="h2">CAPABILITY CURVE · fraction of claims VERIFIED at each τ</div>
+      <div class="panel">
+        <svg class="chart" id="tn-curve" viewBox="0 0 500 160" preserveAspectRatio="none"></svg>
+      </div>
+    </section>
+
+    <!-- ─── CERTIFICATES ─── -->
+    <section data-view="certs" class="hidden">
+      <div class="h1">▓ CERTIFICATES <span class="sub">signed, content-addressed, offline-verifiable</span></div>
+
+      <div class="panel" style="margin-bottom:8px">
+        <div class="row">
+          <label style="width:200px">TENANT
+            <select id="ct-tenant"><option value="">(all)</option></select>
+          </label>
+          <label style="width:180px">STATUS
+            <select id="ct-status">
+              <option value="">(all)</option>
+              <option>verified</option>
+              <option>partial</option>
+              <option>blocked</option>
+              <option>degraded</option>
+            </select>
+          </label>
+          <label style="width:120px">LIMIT
+            <input type="number" id="ct-limit" value="100" min="1" max="1000" />
+          </label>
+          <label style="flex:1">SEARCH
+            <input type="text" id="ct-search" placeholder="cert_id / model substring..." />
+          </label>
+          <button id="ct-refresh">↻ refresh</button>
+          <button id="ct-export">↓ CSV</button>
+        </div>
+      </div>
+
+      <div class="panel" style="padding:0;overflow:auto">
+        <table class="t" id="ct-table">
+          <thead><tr>
+            <th>ISSUED</th><th>TENANT</th><th>CERT ID</th>
+            <th>STATUS</th><th>CLAIMS</th><th>RNDR</th><th>MODEL</th><th>PIPE</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── KB (full CRUD + versions + export) ─── -->
+    <section data-view="kb" class="hidden">
+      <div class="h1">▓ KNOWLEDGE BASE <span class="sub">full CRUD · versioned · exportable</span></div>
+
+      <div class="panel">
+        <div class="row">
+          <label style="width:240px">TENANT
+            <select id="kb-tenant"><option value="demo">demo</option></select>
+          </label>
+          <span class="sp"></span>
+          <button id="kb-refresh">↻ REFRESH</button>
+          <button id="kb-export-jsonl">↓ JSONL</button>
+          <button id="kb-export-csv">↓ CSV</button>
+        </div>
+        <div class="divider"></div>
+        <div class="row">
+          <div>DOCS: <b id="kb-size">—</b></div>
+          <div>CURRENT VERSION: <b id="kb-curv">—</b></div>
+          <div>LAST MUTATION: <b id="kb-loaded">—</b></div>
+        </div>
+      </div>
+
+      <div class="h2">DOCUMENTS · click row to edit · <button id="kb-new" class="small">+ NEW</button> <button id="kb-del-sel" class="small">✗ DELETE SELECTED</button></div>
+      <div class="panel" style="padding:0;max-height:280px;overflow:auto">
+        <table class="t" id="kb-doctable">
+          <thead><tr>
+            <th style="width:28px"><input type="checkbox" id="kb-sel-all"/></th>
+            <th>DOC ID</th><th>SOURCE URI</th><th>TEXT (first 120 chars)</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="h2">EDITOR · upsert a single document</div>
+      <div class="panel">
+        <div class="grid g2">
+          <div>
+            <label>DOC ID</label>
+            <input type="text" id="kb-ed-id" placeholder="e.g. pol-001" />
+            <label style="margin-top:6px">SOURCE URI</label>
+            <input type="text" id="kb-ed-uri" placeholder="kb://pol-001" />
+          </div>
+          <div>
+            <label>TEXT</label>
+            <textarea id="kb-ed-text" rows="5" placeholder="grounded content..."></textarea>
+          </div>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button id="kb-ed-save">► UPSERT</button>
+          <button id="kb-ed-clear">CLEAR</button>
+          <span class="sp"></span>
+          <span class="muted small" id="kb-ed-msg">—</span>
+        </div>
+      </div>
+
+      <div class="h2">BULK LOAD · JSON</div>
+      <div class="panel">
+        <div class="small muted">
+          format: <span class="kbd">{"tenant_id":"...","documents":[{"doc_id":"...","text":"...","source_uri":"..."}]}</span>
+        </div>
+        <textarea id="kb-payload" rows="7">{
+  "tenant_id": "demo",
+  "documents": [
+    {"doc_id": "fr", "text": "Paris is the capital of France.", "source_uri": "kb://fr"},
+    {"doc_id": "wt", "text": "Water boils at 100 degrees Celsius at sea level."}
+  ]
+}</textarea>
+        <div class="row" style="margin-top:6px">
+          <button id="kb-load">► BULK UPSERT</button>
+          <span class="sp"></span>
+          <span class="muted small" id="kb-load-msg">—</span>
+        </div>
+      </div>
+
+      <div class="h2">VERSION HISTORY · <span class="muted">click a version to revert</span></div>
+      <div class="panel" style="padding:0;max-height:220px;overflow:auto">
+        <table class="t" id="kb-versions">
+          <thead><tr>
+            <th>v</th><th>COMMITTED</th><th>DOCS</th><th>BY</th><th>SUMMARY</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── 3-AXIS LIVE ─── -->
+    <section data-view="axes" class="hidden">
+      <div class="h1">▓ 3-AXIS LIVE <span class="sub">internal × external × sycophancy · real-time from signed certs</span></div>
+
+      <div class="grid g3">
+        <div class="panel">
+          <div class="gauge"><svg id="ax-g-int" viewBox="0 0 140 100"></svg>
+            <div class="lbl">INTERNAL · SSH STABILITY</div>
+            <div class="val" id="ax-v-int">—</div>
+          </div>
+          <div class="small muted" style="text-align:center">
+            1.0 = attention-matrix ρ stable · 0.0 = provably unstable
+          </div>
+        </div>
+        <div class="panel">
+          <div class="gauge"><svg id="ax-g-ext" viewBox="0 0 140 100"></svg>
+            <div class="lbl">EXTERNAL · ORACLE SUPPORT</div>
+            <div class="val" id="ax-v-ext">—</div>
+          </div>
+          <div class="small muted" style="text-align:center">
+            1.0 = fully grounded in KB + wiki · 0.0 = unsupported
+          </div>
+        </div>
+        <div class="panel">
+          <div class="gauge"><svg id="ax-g-syco" viewBox="0 0 140 100"></svg>
+            <div class="lbl">SYCOPHANCY Δ</div>
+            <div class="val" id="ax-v-syco">—</div>
+          </div>
+          <div class="small muted" style="text-align:center">
+            + agrees with leading cue · − pushed back
+          </div>
+        </div>
+      </div>
+
+      <div class="h2">TIME-SERIES · last 5 min</div>
+      <div class="panel">
+        <svg class="chart" id="ax-chart" viewBox="0 0 800 180" preserveAspectRatio="none"></svg>
+        <div class="chip-row" style="margin-top:6px">
+          <span class="chip on">─ internal</span>
+          <span class="chip">┄ external</span>
+          <span class="chip">∙∙∙ sycophancy</span>
+        </div>
+      </div>
+
+      <div class="h2">JOINT SCATTER · internal (x) × external (y) · size = |sycophancy|</div>
+      <div class="panel">
+        <svg class="chart" id="ax-scatter" viewBox="0 0 400 260" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="small muted">
+          top-right quadrant = high stability AND high grounding. Cert IDs
+          below: <span id="ax-scatter-summary" class="muted">(populate with traffic)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── INCIDENTS ─── -->
+    <section data-view="incidents" class="hidden">
+      <div class="h1">▓ INCIDENTS <span class="sub">SSH critical · RAD-CoT engage · block spikes · oracle outages</span></div>
+
+      <div class="panel" style="margin-bottom:8px">
+        <div class="row">
+          <label style="width:140px">SEVERITY
+            <select id="inc-sev">
+              <option value="">(all)</option>
+              <option value="critical">critical</option>
+              <option value="warn">warn</option>
+              <option value="info">info</option>
+            </select>
+          </label>
+          <label style="width:180px">KIND
+            <select id="inc-kind">
+              <option value="">(all)</option>
+              <option>ssh.critical</option>
+              <option>ssh.warning</option>
+              <option>radcot.engage</option>
+              <option>block_rate.spike</option>
+              <option>oracle.outage</option>
+              <option>oracle.slow</option>
+              <option>budget.exhausted</option>
+              <option>backend.down</option>
+            </select>
+          </label>
+          <label style="width:140px">ACKED
+            <select id="inc-acked">
+              <option value="">(all)</option>
+              <option value="false">open</option>
+              <option value="true">acknowledged</option>
+            </select>
+          </label>
+          <span class="sp"></span>
+          <button id="inc-refresh">↻ refresh</button>
+          <button id="inc-export">↓ CSV</button>
+        </div>
+      </div>
+
+      <div class="grid g4">
+        <div class="panel kpi">
+          <div class="title">OPEN CRITICAL</div>
+          <div class="val" id="inc-k-crit">—</div>
+          <div class="sub">auto-paged to webhook/slack if integration enabled</div>
+        </div>
+        <div class="panel kpi">
+          <div class="title">OPEN WARN</div>
+          <div class="val" id="inc-k-warn">—</div>
+          <div class="sub">operator review</div>
+        </div>
+        <div class="panel kpi">
+          <div class="title">SSH ALARMS (15m)</div>
+          <div class="val" id="inc-k-ssh">—</div>
+          <div class="sub">DEEP-tier attention instability</div>
+        </div>
+        <div class="panel kpi">
+          <div class="title">RAD-CoT ENGAGES (15m)</div>
+          <div class="val" id="inc-k-rad">—</div>
+          <div class="sub">activation-steering interventions</div>
+        </div>
+      </div>
+
+      <div class="h2">INCIDENT STREAM</div>
+      <div class="panel" style="padding:0;max-height:420px;overflow:auto">
+        <table class="t" id="inc-table">
+          <thead><tr>
+            <th>TIME</th><th>SEV</th><th>KIND</th><th>TITLE</th>
+            <th>TENANT</th><th>CERT</th><th>ACK</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── FEATURE SETTINGS ─── -->
+    <section data-view="settings" class="hidden">
+      <div class="h1">▓ FEATURE SETTINGS <span class="sub">verifier + deep-inspector knobs</span></div>
+      <div class="panel">
+        <div class="h2">NLI STACK</div>
+        <div class="grid g2">
+          <label class="row" style="gap:8px;margin:0"><span class="toggle" id="st-syco"></span> sycophancy detector</label>
+          <label class="row" style="gap:8px;margin:0"><span class="toggle" id="st-neg"></span> negation-aware oracle wrapper</label>
+          <label class="row" style="gap:8px;margin:0"><span class="toggle" id="st-num"></span> numeric-aware NLI</label>
+          <label class="row" style="gap:8px;margin:0"><span class="toggle" id="st-xnli"></span> transformer NLI (requires [nli] extras)</label>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="h2">DEEP INSPECTOR · per-tenant default</div>
+        <label class="row" style="gap:8px"><span class="toggle" id="st-deep"></span> enable DEEP tier by default for DEEP_INSPECTOR tenants</label>
+
+        <div class="grid g2" style="margin-top:6px">
+          <div>
+            <label>SSH threshold ρ · <span id="st-rho-v">0.97</span></label>
+            <input type="range" class="slider" id="st-rho" min="0.80" max="1.00" step="0.01" value="0.97"/>
+            <div class="small muted">↑ fewer SSH critical alarms · ↓ more sensitive to instability</div>
+          </div>
+          <div>
+            <label>SSH compute every N steps · <span id="st-N-v">4</span></label>
+            <input type="range" class="slider" id="st-N" min="1" max="32" step="1" value="4"/>
+            <div class="small muted">↑ cheaper (less frequent) · ↓ finer-grained</div>
+          </div>
+          <div>
+            <label>Steering α · <span id="st-alpha-v">1.50</span></label>
+            <input type="range" class="slider" id="st-alpha" min="0.00" max="3.00" step="0.05" value="1.50"/>
+            <div class="small muted">contrastive-activation magnitude</div>
+          </div>
+          <div>
+            <label>Steering top-K layers · <span id="st-k-v">4</span></label>
+            <input type="range" class="slider" id="st-k" min="1" max="16" step="1" value="4"/>
+            <div class="small muted">how many residual-stream layers we steer</div>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <button id="st-save" class="primary">► SAVE</button>
+          <button id="st-reload">↻ RELOAD</button>
+          <span class="sp"></span>
+          <span class="muted small" id="st-msg">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── USERS ─── -->
+    <section data-view="users" class="hidden">
+      <div class="h1">▓ USERS &amp; ROLES <span class="sub">RBAC · 4 built-in roles</span></div>
+      <div class="panel" style="padding:0;overflow:auto;margin-bottom:8px">
+        <table class="t" id="us-table">
+          <thead><tr>
+            <th>USER ID</th><th>EMAIL</th><th>NAME</th><th>ROLE</th><th>DISABLED</th><th>CREATED</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="h2">CREATE USER</div>
+      <div class="panel">
+        <div class="grid g2">
+          <div>
+            <label>EMAIL</label>
+            <input type="text" id="us-email" />
+            <label style="margin-top:6px">DISPLAY NAME</label>
+            <input type="text" id="us-name" />
+          </div>
+          <div>
+            <label>ROLE</label>
+            <select id="us-role">
+              <option value="viewer">viewer</option>
+              <option value="operator">operator</option>
+              <option value="admin">admin</option>
+              <option value="owner">owner</option>
+            </select>
+            <label style="margin-top:6px">PASSWORD <span class="muted small">(leave blank for SSO-only)</span></label>
+            <input type="password" id="us-pass" />
+          </div>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button id="us-create" class="primary">► CREATE</button>
+          <span class="sp"></span>
+          <span class="muted small" id="us-msg">—</span>
+        </div>
+      </div>
+      <div class="h2">ROLE → PERMISSIONS</div>
+      <div class="panel">
+        <table class="t kv-table">
+          <thead><tr><th>ROLE</th><th>PERMISSIONS</th></tr></thead>
+          <tbody>
+            <tr><td>owner</td><td class="muted">every permission</td></tr>
+            <tr><td>admin</td><td class="muted">view · kb.* · verifier.tune · verifier.settings · integrations.* · incidents.* · apikeys.*</td></tr>
+            <tr><td>operator</td><td class="muted">view · kb.read/write/export · verifier.tune · incidents.ack</td></tr>
+            <tr><td>viewer</td><td class="muted">view · kb.read · integrations.read</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── API KEYS ─── -->
+    <section data-view="keys" class="hidden">
+      <div class="h1">▓ API KEYS <span class="sub">programmatic auth · role-scoped · SHA-256 hashed at rest</span></div>
+      <div class="panel" style="padding:0;overflow:auto;margin-bottom:8px">
+        <table class="t" id="kys-table">
+          <thead><tr>
+            <th>KEY ID</th><th>NAME</th><th>TENANT</th><th>ROLE</th>
+            <th>CREATED</th><th>LAST USED</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="h2">MINT NEW KEY</div>
+      <div class="panel">
+        <div class="grid g3">
+          <div>
+            <label>NAME</label>
+            <input type="text" id="kys-name" value="svc-backend" />
+          </div>
+          <div>
+            <label>TENANT <span class="muted small">(* = fleet-wide)</span></label>
+            <input type="text" id="kys-ten" value="demo" />
+          </div>
+          <div>
+            <label>ROLE</label>
+            <select id="kys-role">
+              <option value="viewer">viewer</option>
+              <option value="operator">operator</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button id="kys-mint" class="primary">► MINT</button>
+          <span class="sp"></span>
+          <span class="muted small" id="kys-msg">—</span>
+        </div>
+        <div id="kys-secret-out" class="hidden" style="margin-top:8px">
+          <div class="small muted">⚠ store this now — plaintext is shown once</div>
+          <div class="secret-box" id="kys-secret"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── INTEGRATIONS ─── -->
+    <section data-view="integrations" class="hidden">
+      <div class="h1">▓ INTEGRATIONS <span class="sub">oracles · backends · alert sinks · OIDC</span></div>
+      <div class="panel" style="padding:0;overflow:auto">
+        <table class="t" id="int-table">
+          <thead><tr>
+            <th>KIND</th><th>NAME</th><th>ENABLED</th><th>CONFIG KEYS</th><th>UPDATED</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="h2">EDIT · select a row above, or add a new one</div>
+      <div class="panel">
+        <div class="grid g2">
+          <div>
+            <label>KIND</label>
+            <select id="int-kind"></select>
+            <label style="margin-top:6px">DISPLAY NAME</label>
+            <input type="text" id="int-name" />
+          </div>
+          <div>
+            <label>ENABLED</label>
+            <div><span class="toggle" id="int-on"></span></div>
+            <label style="margin-top:6px">CONFIG JSON <span class="muted small">(provider-specific, e.g. <code>{"url":"https://..."}</code>)</span></label>
+            <textarea id="int-config" rows="4">{}</textarea>
+          </div>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button id="int-save" class="primary">► SAVE</button>
+          <button id="int-del">✗ REMOVE</button>
+          <span class="sp"></span>
+          <span class="muted small" id="int-msg">—</span>
+        </div>
+      </div>
+      <div class="panel small muted" style="margin-top:8px">
+        Alert webhook shape: <code>POST {url}</code> with <code>{incident_id, ts, kind, severity, title, detail}</code>.
+        Slack variant uses the Slack incoming webhook JSON.
+      </div>
+    </section>
+
+    <!-- ─── TENANTS ─── -->
+    <section data-view="tenants" class="hidden">
+      <div class="h1">▓ TENANTS <span class="sub">configuration surface</span></div>
+      <div class="panel" style="padding:0;overflow:auto">
+        <table class="t" id="tn-table">
+          <thead><tr>
+            <th>TENANT</th><th>TIER</th><th>τ</th><th>τ′</th>
+            <th>RPS</th><th>TOK/MIN</th><th>DEADLINE</th><th>BACKENDS</th><th>ORACLES</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="panel small muted" style="margin-top:8px">
+        Tenant config is read-only from the dashboard today. Modify via code or
+        the <code>TenantConfigStore</code> backing store (Postgres / Consul / etc.).
+        See <code>docs/INTEGRATION.md § Tenant configuration</code>.
+      </div>
+    </section>
+
+    <!-- ─── COMPLIANCE · FRAMEWORK GRID ─── -->
+    <section data-view="comp_overview" class="hidden">
+      <div class="h1">▓ COMPLIANCE · FRAMEWORK GRID <span class="sub">13 regulations · live scoring</span></div>
+      <div class="panel">
+        <div class="row">
+          <div>VERSION: <b id="cmp-ver">—</b></div>
+          <div>FRAMEWORKS: <b id="cmp-n">—</b></div>
+          <div>MEAN SCORE: <b id="cmp-score">—</b></div>
+          <span class="sp"></span>
+          <button id="cmp-refresh">↻ REFRESH</button>
+          <button id="cmp-export">↓ JSON</button>
+        </div>
+      </div>
+      <div class="panel" style="padding:0;overflow:auto">
+        <table class="t" id="cmp-grid">
+          <thead><tr>
+            <th>FRAMEWORK</th><th>JURISDICTION</th><th>SHIP</th><th>PARTIAL</th>
+            <th>NEAR</th><th>GAP</th><th>SCORE</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="h2">CONTROL DETAIL — click a framework above</div>
+      <div class="panel" style="padding:0;overflow:auto;max-height:340px">
+        <table class="t" id="cmp-controls">
+          <thead><tr>
+            <th>CONTROL ID</th><th>STATUS</th><th>TITLE</th><th>EVIDENCE</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── COMPLIANCE · AUDIT LOG ─── -->
+    <section data-view="comp_audit" class="hidden">
+      <div class="h1">▓ AUDIT LOG <span class="sub">SHA-256 hash chain · tamper-evident · ISO 27001 A.5.28 / SOC 2 CC4 / EU AI Act Art.12</span></div>
+
+      <div class="grid g4">
+        <div class="panel kpi"><div class="title">EVENTS</div>          <div class="val" id="ax-n">—</div>     <div class="sub">since startup</div></div>
+        <div class="panel kpi"><div class="title">CHAIN</div>           <div class="val" id="ax-chk">—</div>   <div class="sub">∎ unbroken / ✗ broken at seq</div></div>
+        <div class="panel kpi"><div class="title">LATEST ACTOR</div>    <div class="val" id="ax-actor">—</div> <div class="sub">most recent writer</div></div>
+        <div class="panel kpi"><div class="title">LATEST ACTION</div>   <div class="val" id="ax-act">—</div>   <div class="sub">most recent action</div></div>
+      </div>
+
+      <div class="panel" style="margin-top:8px">
+        <div class="row">
+          <label style="width:200px">ACTION PREFIX
+            <input type="text" id="al-pref" placeholder="kb. / cert. / dsar. / ..." />
+          </label>
+          <label style="width:160px">TENANT
+            <input type="text" id="al-ten" />
+          </label>
+          <span class="sp"></span>
+          <button id="al-refresh">↻ REFRESH</button>
+          <button id="al-verify">∎ VERIFY CHAIN</button>
+          <button id="al-export-jsonl">↓ JSONL</button>
+          <button id="al-export-csv">↓ CSV</button>
+        </div>
+      </div>
+
+      <div class="panel" style="padding:0;overflow:auto;max-height:480px">
+        <table class="t" id="al-table">
+          <thead><tr>
+            <th>SEQ</th><th>TIME</th><th>ACTOR</th><th>ROLE</th>
+            <th>ACTION</th><th>RESOURCE</th><th>OUTCOME</th><th>HASH (8)</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── COMPLIANCE · DSAR ─── -->
+    <section data-view="comp_dsar" class="hidden">
+      <div class="h1">▓ DSAR QUEUE <span class="sub">GDPR Arts.15-22 · CCPA 1798.100-130 · India DPDP Sec.11-13</span></div>
+
+      <div class="grid g4">
+        <div class="panel kpi"><div class="title">TOTAL</div>      <div class="val" id="ds-tot">—</div> <div class="sub">all DSARs</div></div>
+        <div class="panel kpi"><div class="title">OPEN</div>       <div class="val" id="ds-open">—</div><div class="sub">awaiting fulfilment</div></div>
+        <div class="panel kpi"><div class="title">OVERDUE</div>    <div class="val" id="ds-od">—</div>  <div class="sub">past SLA — auto-flagged</div></div>
+        <div class="panel kpi"><div class="title">FULFILLED</div>  <div class="val" id="ds-ff">—</div>  <div class="sub">closed in time</div></div>
+      </div>
+
+      <div class="h2">OPEN A NEW DSAR</div>
+      <div class="panel">
+        <div class="grid g3">
+          <div>
+            <label>TENANT</label>
+            <input type="text" id="ds-ten" value="demo"/>
+            <label style="margin-top:6px">DATA SUBJECT ID <span class="muted small">(opaque hash)</span></label>
+            <input type="text" id="ds-subj" placeholder="hash:..."/>
+          </div>
+          <div>
+            <label>TYPE</label>
+            <select id="ds-type">
+              <option value="access">access · GDPR Art.15</option>
+              <option value="rectify">rectify · GDPR Art.16</option>
+              <option value="delete">delete · GDPR Art.17 / CCPA</option>
+              <option value="portability">portability · GDPR Art.20</option>
+              <option value="restrict">restrict · GDPR Art.18</option>
+              <option value="object">object · GDPR Art.21</option>
+              <option value="opt_out">opt_out · CCPA 1798.120</option>
+              <option value="limit_use">limit_use · CPRA</option>
+            </select>
+            <label style="margin-top:6px">JURISDICTION</label>
+            <select id="ds-jur">
+              <option value="gdpr">GDPR (30d)</option>
+              <option value="ccpa">CCPA/CPRA (45d)</option>
+              <option value="india_dpdp">India DPDP (30d)</option>
+              <option value="korea_ai">Korea (30d)</option>
+            </select>
+          </div>
+          <div>
+            <label>RECEIVED VIA</label>
+            <select id="ds-via">
+              <option value="email">email</option>
+              <option value="ui">ui</option>
+              <option value="api">api</option>
+            </select>
+            <label style="margin-top:6px">CONTACT</label>
+            <input type="text" id="ds-ct"/>
+          </div>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button id="ds-open-btn" class="primary">► OPEN DSAR</button>
+          <span class="sp"></span>
+          <span class="muted small" id="ds-msg">—</span>
+        </div>
+      </div>
+
+      <div class="h2">ALL REQUESTS</div>
+      <div class="panel" style="padding:0;overflow:auto;max-height:380px">
+        <table class="t" id="ds-table">
+          <thead><tr>
+            <th>ID</th><th>TENANT</th><th>SUBJECT</th><th>TYPE</th>
+            <th>JURIS</th><th>OPENED</th><th>DEADLINE</th><th>DAYS</th>
+            <th>STATUS</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── COMPLIANCE · CONSENT ─── -->
+    <section data-view="comp_consent" class="hidden">
+      <div class="h1">▓ CONSENT <span class="sub">GDPR Art.7 · ISO 27701 A.7.2.4 · CCPA opt-out</span></div>
+      <div class="panel">
+        <div class="row">
+          <label style="width:200px">TENANT
+            <input type="text" id="cs-ten" value="demo"/>
+          </label>
+          <span class="sp"></span>
+          <button id="cs-refresh">↻ REFRESH</button>
+        </div>
+      </div>
+      <div class="grid g4" id="cs-summary"></div>
+
+      <div class="h2">RECORD CONSENT (or WITHDRAWAL)</div>
+      <div class="panel">
+        <div class="grid g3">
+          <div>
+            <label>DATA SUBJECT</label>
+            <input type="text" id="cs-subj"/>
+            <label style="margin-top:6px">PURPOSE</label>
+            <select id="cs-purp">
+              <option value="service_delivery">service_delivery</option>
+              <option value="ai_training">ai_training</option>
+              <option value="personalization">personalization</option>
+              <option value="analytics">analytics</option>
+              <option value="marketing">marketing</option>
+              <option value="third_party_share">third_party_share (CCPA sale)</option>
+              <option value="sensitive_pi">sensitive_pi (CPRA)</option>
+            </select>
+          </div>
+          <div>
+            <label>STATUS</label>
+            <select id="cs-st">
+              <option value="granted">granted</option>
+              <option value="withdrawn">withdrawn</option>
+              <option value="expired">expired</option>
+            </select>
+            <label style="margin-top:6px">LAWFUL BASIS</label>
+            <select id="cs-lb">
+              <option value="consent">consent</option>
+              <option value="contract">contract</option>
+              <option value="legal_obligation">legal_obligation</option>
+              <option value="vital_interests">vital_interests</option>
+              <option value="public_task">public_task</option>
+              <option value="legitimate_interests">legitimate_interests</option>
+            </select>
+          </div>
+          <div>
+            <label>CAPTURED VIA</label>
+            <select id="cs-via">
+              <option value="ui">ui</option><option value="api">api</option><option value="import">import</option>
+            </select>
+            <label style="margin-top:6px">EVIDENCE URI <span class="muted small">(proof — S3 path / ticket id)</span></label>
+            <input type="text" id="cs-ev"/>
+          </div>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button id="cs-record" class="primary">► RECORD</button>
+          <span class="sp"></span>
+          <span class="muted small" id="cs-msg">—</span>
+        </div>
+      </div>
+
+      <div class="h2">RECORDS</div>
+      <div class="panel" style="padding:0;overflow:auto;max-height:340px">
+        <table class="t" id="cs-table">
+          <thead><tr><th>SUBJECT</th><th>PURPOSE</th><th>STATUS</th><th>BASIS</th><th>VIA</th><th>EVIDENCE</th><th>TS</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── COMPLIANCE · RETENTION ─── -->
+    <section data-view="comp_retention" class="hidden">
+      <div class="h1">▓ RETENTION POLICIES <span class="sub">GDPR Art.5(e) · ISO 27001 A.8.10 · ISO 27701 A.7.4.5</span></div>
+      <div class="panel">
+        <div class="row">
+          <label style="width:200px">TENANT
+            <input type="text" id="rt-ten" value="demo"/>
+          </label>
+          <span class="sp"></span>
+          <button id="rt-refresh">↻ REFRESH</button>
+          <button id="rt-seed">⚙ SEED DEFAULTS</button>
+        </div>
+      </div>
+      <div class="panel" style="padding:0;overflow:auto">
+        <table class="t" id="rt-table">
+          <thead><tr>
+            <th>DATA CLASS</th><th>RETENTION (days)</th><th>METHOD</th>
+            <th>LEGAL HOLD</th><th>NOTES</th><th>UPDATED BY</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="h2">UPSERT POLICY</div>
+      <div class="panel">
+        <div class="grid g3">
+          <div>
+            <label>DATA CLASS</label>
+            <select id="rt-cls">
+              <option>certificates</option><option>audit_log</option>
+              <option>chat_logs</option><option>kb_documents</option>
+              <option>incidents</option><option>bench_events</option>
+              <option>user_profiles</option>
+            </select>
+            <label style="margin-top:6px">RETENTION DAYS</label>
+            <input type="number" id="rt-d" value="365"/>
+          </div>
+          <div>
+            <label>DELETION METHOD</label>
+            <select id="rt-m">
+              <option value="purge">purge</option>
+              <option value="anonymize">anonymize</option>
+              <option value="archive">archive</option>
+            </select>
+            <label class="row" style="gap:8px;margin-top:6px"><span class="toggle" id="rt-hold"></span> legal hold</label>
+          </div>
+          <div>
+            <label>NOTES</label>
+            <textarea id="rt-notes" rows="3"></textarea>
+          </div>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button id="rt-save" class="primary">► SAVE</button>
+          <span class="sp"></span>
+          <span class="muted small" id="rt-msg">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── COMPLIANCE · BREACH ─── -->
+    <section data-view="comp_breach" class="hidden">
+      <div class="h1">▓ BREACH REPORTS <span class="sub">GDPR 72h · DORA 4h/72h/30d · EU AI Act 15d · HIPAA 60d</span></div>
+      <div class="grid g4">
+        <div class="panel kpi"><div class="title">OPEN</div>     <div class="val" id="br-open">—</div></div>
+        <div class="panel kpi"><div class="title">OVERDUE</div>  <div class="val" id="br-od">—</div>   <div class="sub">past notification window</div></div>
+        <div class="panel kpi"><div class="title">CRITICAL</div> <div class="val" id="br-crit">—</div></div>
+        <div class="panel kpi"><div class="title">CLOSED</div>   <div class="val" id="br-cl">—</div></div>
+      </div>
+
+      <div class="h2">OPEN A BREACH</div>
+      <div class="panel">
+        <div class="grid g2">
+          <div>
+            <label>TITLE</label>
+            <input type="text" id="br-title" placeholder="e.g. KB doc exposed via misconfigured ingress"/>
+            <label style="margin-top:6px">SUMMARY</label>
+            <textarea id="br-sum" rows="3"></textarea>
+            <label style="margin-top:6px">TENANT</label>
+            <input type="text" id="br-ten" value="demo"/>
+          </div>
+          <div>
+            <label>SEVERITY</label>
+            <select id="br-sev">
+              <option>low</option><option>medium</option><option selected>high</option><option>critical</option>
+            </select>
+            <label style="margin-top:6px">KIND</label>
+            <select id="br-k">
+              <option>confidentiality</option><option>integrity</option><option>availability</option>
+              <option>ai_harm</option><option>insider</option><option>supply_chain</option>
+            </select>
+            <label style="margin-top:6px">JURISDICTIONS <span class="muted small">comma-separated</span></label>
+            <input type="text" id="br-jur" value="gdpr,dora"/>
+            <label style="margin-top:6px">AFFECTED SUBJECTS (est.)</label>
+            <input type="number" id="br-n" value="0"/>
+          </div>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button id="br-open-btn" class="primary">► OPEN BREACH</button>
+          <span class="sp"></span>
+          <span class="muted small" id="br-msg">—</span>
+        </div>
+      </div>
+
+      <div class="h2">REPORTS</div>
+      <div class="panel" style="padding:0;overflow:auto;max-height:380px">
+        <table class="t" id="br-table">
+          <thead><tr>
+            <th>ID</th><th>SEV</th><th>KIND</th><th>TITLE</th>
+            <th>JURIS</th><th>WINDOWS DUE</th><th>OPENED</th><th>CLOSED</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── COMPLIANCE · RISK REGISTER ─── -->
+    <section data-view="comp_risks" class="hidden">
+      <div class="h1">▓ AI RISK REGISTER <span class="sub">EU AI Act Art.9 · ISO 42001 8.4 · NIST AI RMF · Colorado AIA</span></div>
+      <div class="panel">
+        <div class="row">
+          <button id="rk-refresh">↻ REFRESH</button>
+          <button id="rk-seed">⚙ SEED DEFAULTS</button>
+          <span class="sp"></span>
+          <span class="muted small">Score = likelihood × impact (1-25)</span>
+        </div>
+      </div>
+      <div class="panel" style="padding:0;overflow:auto;max-height:380px">
+        <table class="t" id="rk-table">
+          <thead><tr>
+            <th>ID</th><th>CATEGORY</th><th>TITLE</th><th>LIKELIHOOD</th>
+            <th>IMPACT</th><th>SCORE</th><th>STATUS</th><th>FRAMEWORKS</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="h2">ALGORITHMIC IMPACT ASSESSMENT (AIIA / DPIA)</div>
+      <div class="panel">
+        <div class="grid g2">
+          <div>
+            <label>SYSTEM NAME</label>
+            <input type="text" id="ai-sys" placeholder="e.g. AcmeBot v2"/>
+            <label style="margin-top:6px">INTENDED PURPOSE</label>
+            <textarea id="ai-purp" rows="3"></textarea>
+            <label style="margin-top:6px">DEPLOYED GEOGRAPHIES <span class="muted small">comma-separated (EU, US, ...)</span></label>
+            <input type="text" id="ai-geo" value="EU"/>
+          </div>
+          <div>
+            <label>AFFECTED GROUPS</label>
+            <input type="text" id="ai-grp" placeholder="end-users, employees, ..."/>
+            <label style="margin-top:6px">HUMAN OVERSIGHT</label>
+            <textarea id="ai-ho" rows="2"></textarea>
+            <label style="margin-top:6px">MONITORING</label>
+            <textarea id="ai-mon" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button id="ai-create" class="primary">► CREATE AIIA</button>
+          <span class="sp"></span>
+          <span class="muted small" id="ai-msg">—</span>
+        </div>
+      </div>
+      <div class="panel" style="padding:0;overflow:auto;max-height:280px">
+        <table class="t" id="ai-table">
+          <thead><tr>
+            <th>ID</th><th>SYSTEM</th><th>RISK CLASS</th><th>GEOS</th>
+            <th>SIGN-OFF BY</th><th>NEXT REVIEW</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── COMPLIANCE · MODEL CARDS ─── -->
+    <section data-view="comp_cards" class="hidden">
+      <div class="h1">▓ MODEL CARDS <span class="sub">ISO 42001 A.6.1.2 · EU AI Act Art.11 · NIST AI RMF MAP</span></div>
+      <div class="panel">
+        <div class="row">
+          <button id="mc-refresh">↻ REFRESH</button>
+          <span class="sp"></span>
+          <span class="muted small">Cards are versioned — every PATCH bumps version</span>
+        </div>
+      </div>
+      <div class="panel" style="padding:0;overflow:auto;max-height:280px">
+        <table class="t" id="mc-table">
+          <thead><tr>
+            <th>ID</th><th>SYSTEM</th><th>PROVIDER</th><th>MODEL</th>
+            <th>VERSION</th><th>CREATED</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="h2">CREATE CARD</div>
+      <div class="panel">
+        <div class="grid g3">
+          <div>
+            <label>SYSTEM NAME</label>
+            <input type="text" id="mc-sys"/>
+            <label style="margin-top:6px">PROVIDER</label>
+            <select id="mc-pr">
+              <option>OpenAI</option><option>Anthropic</option>
+              <option>Mistral</option><option>Meta (Llama)</option>
+              <option>Google</option><option>in-house</option>
+            </select>
+          </div>
+          <div>
+            <label>MODEL ID</label>
+            <input type="text" id="mc-mid" placeholder="gpt-4o-2024-05"/>
+            <label style="margin-top:6px">CONTACT (owner)</label>
+            <input type="text" id="mc-ct"/>
+          </div>
+          <div>
+            <label>INTENDED USE</label>
+            <textarea id="mc-use" rows="3"></textarea>
+            <label style="margin-top:6px">OUT-OF-SCOPE USE <span class="muted small">comma-separated</span></label>
+            <input type="text" id="mc-oos"/>
+          </div>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button id="mc-create" class="primary">► CREATE CARD</button>
+          <span class="sp"></span>
+          <span class="muted small" id="mc-msg">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── COMPLIANCE · PROFILE ─── -->
+    <section data-view="comp_profile" class="hidden">
+      <div class="h1">▓ TENANT COMPLIANCE PROFILE <span class="sub">RoPA inputs · DPO contact · jurisdictions</span></div>
+      <div class="panel">
+        <div class="row">
+          <label style="width:240px">TENANT
+            <input type="text" id="pf-ten" value="demo"/>
+          </label>
+          <span class="sp"></span>
+          <button id="pf-load">↻ LOAD</button>
+          <button id="pf-save" class="primary">► SAVE</button>
+          <a id="pf-ropa" class="kbd" href="#" style="margin-left:8px">↓ RoPA (Art.30)</a>
+          <a id="pf-priv" class="kbd" href="#">↓ Privacy notice</a>
+          <a id="pf-eu" class="kbd" href="#">↓ EU AI Act packet</a>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="grid g2">
+          <div>
+            <label>LEGAL NAME</label>
+            <input type="text" id="pf-name"/>
+            <label style="margin-top:6px">ADDRESS</label>
+            <input type="text" id="pf-addr"/>
+            <label style="margin-top:6px">DPO CONTACT</label>
+            <input type="text" id="pf-dpo" placeholder="dpo@..."/>
+            <label style="margin-top:6px">EU REPRESENTATIVE (Art.27)</label>
+            <input type="text" id="pf-rep"/>
+            <label style="margin-top:6px">LAWFUL BASIS</label>
+            <select id="pf-lb">
+              <option>contract</option><option>consent</option>
+              <option>legal_obligation</option><option>vital_interests</option>
+              <option>public_task</option><option>legitimate_interests</option>
+            </select>
+          </div>
+          <div>
+            <label>PURPOSES <span class="muted small">comma-separated</span></label>
+            <input type="text" id="pf-purp"/>
+            <label style="margin-top:6px">CATEGORIES OF DATA</label>
+            <input type="text" id="pf-cat"/>
+            <label style="margin-top:6px">CATEGORIES OF SUBJECTS</label>
+            <input type="text" id="pf-sub"/>
+            <label style="margin-top:6px">DEPLOYMENT GEOGRAPHIES</label>
+            <input type="text" id="pf-geo"/>
+            <label style="margin-top:6px">SUB-PROCESSORS</label>
+            <input type="text" id="pf-sp"/>
+          </div>
+        </div>
+        <div class="grid g3" style="margin-top:6px">
+          <div><label>APPLICABLE FRAMEWORKS</label><input type="text" id="pf-fr" placeholder="gdpr,iso_27001,iso_42001,..."/></div>
+          <div><label>BREACH REPORTING JURISDICTIONS</label><input type="text" id="pf-jur" placeholder="gdpr,dora,..."/></div>
+          <div><label>CROSS-BORDER BASIS</label><input type="text" id="pf-cb" placeholder="SCC, adequacy, DPF"/></div>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <label class="row" style="gap:8px"><span class="toggle" id="pf-spi"></span> sensitive PI</label>
+          <label class="row" style="gap:8px"><span class="toggle" id="pf-sdf"></span> significant data fiduciary (India DPDP)</label>
+          <label class="row" style="gap:8px"><span class="toggle" id="pf-hr"></span>  high-risk AI (EU AI Act Annex III)</label>
+          <span class="sp"></span>
+          <span class="muted small" id="pf-msg">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── OFFLINE VERIFY ─── -->
+    <section data-view="verify" class="hidden">
+      <div class="h1">▓ OFFLINE VERIFY <span class="sub">paste a cert JSON — check signature against gateway's public key</span></div>
+      <div class="panel">
+        <label>CERT JSON</label>
+        <textarea id="vf-json" rows="12" placeholder='{"cert_id":"...","payload":{...},"signature":"..."}'></textarea>
+        <div class="row" style="margin-top:6px">
+          <button id="vf-run">► VERIFY</button>
+          <span class="sp"></span>
+          <span class="muted small" id="vf-msg">—</span>
+        </div>
+        <div class="divider"></div>
+        <div id="vf-out" class="small muted">—</div>
+      </div>
+      <div class="panel small muted" style="margin-top:8px">
+        This checks signature shape + pipeline version against the running gateway.
+        For full auditor-grade verification (offline, no server), use
+        <code>trustlens verify cert.json --public-key signer.pub.pem</code>.
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ─────────────────────────────── LOGS ────────────────────────────── -->
+  <div class="logs">
+    <div class="logs-head">
+      <span>≡ LIVE LOGS</span>
+      <span class="sp"></span>
+      <label style="margin:0"><input type="checkbox" id="log-follow" checked/> follow</label>
+      <label style="margin:0"><input type="checkbox" id="log-err-only"/> err</label>
+      <input type="text" id="log-filter" placeholder="filter..." />
+      <button id="log-clear" title="clear">×</button>
+      <button id="log-export" title="download">↓</button>
+    </div>
+    <div class="logs-body" id="logs-body"></div>
+  </div>
+
+  <!-- ────────────────────────────── STATUS ───────────────────────────── -->
+  <div class="status">
+    <span><span id="st-dot" class="dot"></span> conn <b id="st-conn">127.0.0.1</b></span>
+    <span>rtt <b id="st-rtt">—</b>ms</span>
+    <span>events <b id="st-events">0</b></span>
+    <span>buffer <b id="st-buf">0</b></span>
+    <span class="sp"></span>
+    <span>build <b id="st-build">1.0.0</b></span>
+    <span>tick <b id="st-tick">0</b></span>
+  </div>
+</div>
+
+<!-- ────────────────────────────── MODAL ────────────────────────────── -->
+<div class="modal-scrim" id="modal">
+  <div class="modal">
+    <div class="hd"><span id="m-title">—</span><span class="sp"></span>
+      <button id="m-copy">⎘ copy</button>
+      <button id="m-close">×</button>
+    </div>
+    <pre id="m-body"></pre>
+  </div>
+</div>
+
+<script>
+// ═════════════════════════════════════════════════════════════════════════
+// UTILITIES
+// ═════════════════════════════════════════════════════════════════════════
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const pad = (n, w=2) => String(n).padStart(w, '0');
+const fmtUtc = t => {
+  const d = new Date(t*1000);
+  return pad(d.getUTCHours())+':'+pad(d.getUTCMinutes())+':'+pad(d.getUTCSeconds());
+};
+const fmtDur = s => {
+  if (s < 60) return s.toFixed(0)+'s';
+  if (s < 3600) return (s/60).toFixed(1)+'m';
+  return (s/3600).toFixed(1)+'h';
+};
+const esc = v => String(v).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const fetchJSON = async (path, opts) => {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(r.status+' '+r.statusText);
+  return r.json();
+};
+const downloadBlob = (data, filename, mime='text/plain') => {
+  const blob = new Blob([data], {type: mime});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+const toCSV = (rows, cols) => {
+  const esc = v => {
+    const s = v == null ? '' : String(v);
+    return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+  };
+  return [cols.map(esc).join(',')].concat(
+    rows.map(r => cols.map(c => esc(r[c])).join(','))
+  ).join('\n');
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// STATE
+// ═════════════════════════════════════════════════════════════════════════
+const state = {
+  view: 'overview',
+  tenant: 'demo',
+  tenants: [],
+  summary: null,
+  certs: [],
+  startedAt: Date.now() / 1000,
+  eventSeq: 0,
+  lastTickMs: 0,
+  tick: 0,
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// NAV
+// ═════════════════════════════════════════════════════════════════════════
+$$('.nav .item').forEach(el => {
+  el.addEventListener('click', () => setView(el.dataset.view));
+});
+function setView(v) {
+  state.view = v;
+  $$('.nav .item').forEach(el => {
+    const on = el.dataset.view === v;
+    el.classList.toggle('active', on);
+    el.querySelector('.marker').textContent = on ? '▶' : '·';
+  });
+  $$('#main > section').forEach(sec => {
+    sec.classList.toggle('hidden', sec.dataset.view !== v);
+  });
+  if (v === 'certs')     refreshCerts();
+  if (v === 'tenants')   refreshTenants();
+  if (v === 'analytics') refreshAnalytics();
+  if (v === 'kb')        refreshKB();
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// CHART HELPERS (SVG, no libs)
+// ═════════════════════════════════════════════════════════════════════════
+function sparkline(svg, data, opts={}) {
+  const w = 400, h = 80, pad = 4;
+  const max = Math.max(1e-9, ...data);
+  const n = data.length;
+  const x = i => pad + (w - 2*pad) * (n <= 1 ? 0.5 : i/(n-1));
+  const y = v => h - pad - (h - 2*pad) * (v / max);
+
+  const pts = data.map((v, i) => x(i)+','+y(v)).join(' ');
+  const bars = opts.bars
+    ? data.map((v, i) => `<rect class="bar" x="${x(i)-1}" y="${y(v)}" width="2" height="${h-pad-y(v)}"/>`).join('')
+    : '';
+  const line = !opts.bars
+    ? `<polyline class="line" points="${pts}" />`
+    : '';
+  svg.innerHTML = `
+    <g>
+      <line class="axis" x1="${pad}" y1="${h-pad}" x2="${w-pad}" y2="${h-pad}"/>
+      ${bars}${line}
+      <text class="lbl" x="${w-pad}" y="${pad+8}" text-anchor="end">max ${max.toFixed(2)}</text>
+      <text class="lbl" x="${pad}" y="${h-pad-1}">n=${n}</text>
+    </g>`;
+}
+
+function barRow(label, val, max, unit='') {
+  const pct = max > 0 ? Math.round(100 * val / max) : 0;
+  return `<div class="bar-row">
+    <span class="lbl">${esc(label)}</span>
+    <span class="progress"><span style="width:${pct}%"></span></span>
+    <span class="val">${val}${unit}</span>
+  </div>`;
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// CLOCK + GATEWAY STATUS
+// ═════════════════════════════════════════════════════════════════════════
+setInterval(() => {
+  const now = Math.floor(Date.now()/1000);
+  $('#kv-utc').textContent = fmtUtc(now);
+  $('#kv-uptime').textContent = fmtDur(now - state.startedAt);
+  state.tick++;
+  $('#st-tick').textContent = state.tick;
+}, 1000);
+
+async function pollHealth() {
+  const t0 = performance.now();
+  try {
+    const h = await fetchJSON('/healthz');
+    const rtt = Math.round(performance.now() - t0);
+    $('#st-rtt').textContent = rtt;
+    $('#gw-dot').textContent = '● ok';
+    $('#gw-dot').className = 'badge on';
+    $('#st-dot').classList.remove('off');
+    $('#kv-pipe').textContent = h.pipeline_version || '—';
+  } catch (e) {
+    $('#gw-dot').textContent = '✗ down';
+    $('#gw-dot').className = 'badge off';
+    $('#st-dot').classList.add('off');
+  }
+  try {
+    const d = await fetchJSON('/v1/admin/health/deep');
+    $('#st-buf').textContent = d.events_in_buffer;
+  } catch (e) {}
+}
+setInterval(pollHealth, 3000);
+pollHealth();
+
+// ═════════════════════════════════════════════════════════════════════════
+// EVENT STREAM (SSE → logs panel + kpi refresh trigger)
+// ═════════════════════════════════════════════════════════════════════════
+const logsBody = $('#logs-body');
+const MAX_LOGS = 500;
+function addLog(ev) {
+  const filter = $('#log-filter').value.trim().toLowerCase();
+  const errOnly = $('#log-err-only').checked;
+  const isErr = ev.kind === 'error';
+  if (errOnly && !isErr) return;
+  const txt = `${fmtUtc(ev.ts)} ${(ev.kind||'?').padEnd(7)} ${(ev.tenant_id||'-').padEnd(10)} ${ev.path||''} ${ev.status_code||''} ${ev.cert_status||''} ${ev.error_code||''} ${ev.latency_ms!=null? ev.latency_ms+'ms' : ''}`.trim();
+  if (filter && !txt.toLowerCase().includes(filter)) return;
+  const row = document.createElement('div');
+  row.className = 'log-row' + (isErr?' err':'');
+  row.innerHTML = `<span class="t">${fmtUtc(ev.ts)}</span> <span class="k">${esc(ev.kind)}</span> <span class="p">${esc(ev.tenant_id||'-')} ${esc(ev.path||'')} ${esc(ev.status_code||'')} ${esc(ev.cert_status||'')} ${esc(ev.error_code||'')} ${ev.latency_ms!=null? ev.latency_ms+'ms':''}</span>`;
+  logsBody.appendChild(row);
+  while (logsBody.childElementCount > MAX_LOGS) logsBody.removeChild(logsBody.firstElementChild);
+  if ($('#log-follow').checked) logsBody.scrollTop = logsBody.scrollHeight;
+  state.eventSeq++;
+  $('#st-events').textContent = state.eventSeq;
+}
+async function bootstrapLogs() {
+  try {
+    const r = await fetchJSON('/v1/admin/events?limit=100');
+    for (const ev of (r.events || [])) addLog(ev);
+  } catch {}
+}
+function connectStream() {
+  const es = new EventSource('/v1/admin/events/stream');
+  es.onmessage = e => {
+    try { addLog(JSON.parse(e.data)); } catch {}
+  };
+  es.onerror = () => { setTimeout(connectStream, 2000); es.close(); };
+}
+bootstrapLogs().then(connectStream);
+$('#log-clear').onclick = () => logsBody.innerHTML = '';
+$('#log-export').onclick = () => {
+  const lines = [...logsBody.querySelectorAll('.log-row')].map(r => r.textContent).join('\n');
+  downloadBlob(lines, 'trustlens-logs-'+Date.now()+'.txt');
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// OVERVIEW + REDUCTION
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshOverview() {
+  try {
+    const s = await fetchJSON('/v1/admin/analytics/summary?window_s=300&bucket_s=10');
+    state.summary = s;
+
+    // KPIs
+    const reqPerMin = s.n_requests * (60/s.window_s);
+    $('#kpi-reqmin').textContent = reqPerMin.toFixed(1);
+    $('#kpi-reqtotal').textContent = s.n_requests+' total · '+s.n_certs+' certs';
+    $('#kpi-p50').textContent = s.latency_ms.p50;
+    $('#kpi-p95').textContent = s.latency_ms.p95;
+    $('#kpi-p99').textContent = s.latency_ms.p99;
+    $('#kpi-block').textContent = (100*s.block_rate).toFixed(1)+'%';
+    $('#kpi-err').textContent = (100*s.error_rate).toFixed(2)+'%';
+    $('#kpi-errn').textContent = s.n_errors;
+    $('#kpi-certn').textContent = s.n_certs;
+
+    sparkline($('#ch-req'),  s.buckets.requests, {bars:true});
+    sparkline($('#ch-p99'),  s.buckets.p99_ms);
+    sparkline($('#ch-cert'), s.buckets.certs,    {bars:true});
+    sparkline($('#ch-err'),  s.buckets.errors,   {bars:true});
+
+    // status mix
+    const mix = s.status_mix;
+    const total = Object.values(mix).reduce((a,b)=>a+b, 0) || 1;
+    const order = ['verified','partial','blocked','degraded'];
+    const mark = {verified:'■', partial:'□', blocked:'▨', degraded:'◇'};
+    $('#status-mix').innerHTML = order.map(k => {
+      const n = mix[k]||0;
+      const pct = 100*n/total;
+      return `<div class="bar-row">
+        <span class="lbl">${mark[k]} ${k}</span>
+        <span class="progress"><span style="width:${pct.toFixed(1)}%"></span></span>
+        <span class="val">${n} (${pct.toFixed(0)}%)</span>
+      </div>`;
+    }).join('');
+
+    refreshReduction();
+  } catch (e) {}
+
+  try {
+    const r = await fetchJSON('/v1/admin/certs?limit=25');
+    state.certs = r;
+    const tbody = $('#recent-certs tbody');
+    tbody.innerHTML = r.map(c => `<tr class="clk" data-cid="${esc(c.cert_id)}">
+      <td>${esc((c.issued_at||'').replace('T',' ').replace(/\..*/, ' '))}</td>
+      <td>${esc(c.tenant_id)}</td>
+      <td>${esc(c.cert_id.slice(0,14))}…</td>
+      <td>${statusMark(c.cert_status)} ${esc(c.cert_status)}</td>
+      <td>${esc(c.n_claims)}</td>
+      <td>${esc(c.n_renderable)}</td>
+      <td>${esc(c.model_id||'')}</td>
+    </tr>`).join('');
+    tbody.querySelectorAll('tr').forEach(tr => {
+      tr.addEventListener('click', () => openCertDetail(tr.dataset.cid));
+    });
+  } catch (e) {}
+}
+function statusMark(s) {
+  return ({verified:'■', partial:'□', blocked:'▨', degraded:'◇'}[s] || '?');
+}
+setInterval(refreshOverview, 2000);
+refreshOverview();
+
+$('#btn-export-certs').onclick = () => {
+  const rows = state.certs;
+  const csv = toCSV(rows, ['issued_at','tenant_id','cert_id','cert_status','n_claims','n_renderable','model_id','pipeline_version']);
+  downloadBlob(csv, 'trustlens-certs-'+Date.now()+'.csv', 'text/csv');
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// REDUCTION VIEW
+// ═════════════════════════════════════════════════════════════════════════
+$('#rd-baseline').addEventListener('input', () => {
+  $('#rd-baseline-v').textContent = $('#rd-baseline').value+'%';
+  refreshReduction();
+});
+function refreshReduction() {
+  const s = state.summary;
+  if (!s) return;
+  const baseline = parseFloat($('#rd-baseline').value) / 100;
+  const certs   = s.n_certs;
+  const blocked = s.n_blocked;
+  const actual_leak = certs > 0 ? (certs - blocked) / certs : 0;
+  const baseline_leak = baseline;
+  const factor = actual_leak > 0 ? (baseline_leak / actual_leak) : (baseline > 0 ? Infinity : 0);
+
+  $('#rd-total').textContent = certs;
+  $('#rd-blocked').textContent = blocked;
+  $('#rd-factor').textContent = certs > 0 ? (isFinite(factor) ? factor.toFixed(2)+'×' : '∞') : '—';
+  $('#rd-window').textContent = 'last '+fmtDur(s.window_s);
+
+  // Side-by-side chart — two bars: baseline leak vs TrustLens leak
+  // Width of each slice shows fraction of 100 claims.
+  const w = 600, h = 160, pad = 30;
+  const drawBar = (y, frac, label, valText, markMax=100) => {
+    const full = w - 2*pad;
+    const bad = Math.max(0, Math.min(1, frac));
+    return `
+      <text class="lbl" x="${pad}" y="${y-4}">${label}</text>
+      <rect x="${pad}" y="${y}"  width="${full}" height="22" fill="none" stroke="#555"/>
+      <rect class="bar" x="${pad}" y="${y}" width="${full*bad}" height="22"/>
+      <text class="lblfg" x="${pad+full+4}" y="${y+16}">${valText}</text>
+    `;
+  };
+  $('#ch-reduction').innerHTML = `
+    <g>
+      ${drawBar(20,  baseline_leak,  'without trustlens (baseline)',  (baseline_leak*100).toFixed(1)+'% leak')}
+      ${drawBar(70,  actual_leak,    'with trustlens (measured)',      (actual_leak*100).toFixed(2)+'% leak')}
+      <line class="axis" x1="${pad}" y1="110" x2="${w-pad}" y2="110"/>
+      <text class="lbl" x="${pad}" y="128">0%</text>
+      <text class="lbl" x="${w-pad}" y="128" text-anchor="end">100%</text>
+      <text class="lblfg" x="${w/2}" y="150" text-anchor="middle">
+        ${certs>0 && isFinite(factor) ? factor.toFixed(2)+'× fewer hallucinations reach users' : 'no certs yet — send traffic to populate'}
+      </text>
+    </g>`;
+
+  // Feature contribution bars — approximation from status mix
+  // In production this should be a real per-feature attribution counter.
+  const features = {
+    'KB oracle (grounding)':     s.status_mix.verified || 0,
+    'NLI contradiction':         s.status_mix.blocked || 0,
+    'partial / some-block':      s.status_mix.partial || 0,
+    'degraded (chaos / tight)':  s.status_mix.degraded || 0,
+  };
+  const fmax = Math.max(1, ...Object.values(features));
+  $('#rd-feature-bars').innerHTML = Object.entries(features).map(
+    ([k,v]) => barRow(k, v, fmax)
+  ).join('');
+
+  // Stacked bar over time — requests buckets labelled with cert status
+  const buckets = s.buckets.certs;
+  const bw = 600, bh = 120, bp = 10;
+  const bmax = Math.max(1, ...buckets);
+  const x = i => bp + (bw - 2*bp) * (buckets.length <= 1 ? 0.5 : i/(buckets.length-1));
+  const bars = buckets.map((v,i) => {
+    const h_ = (bh-2*bp) * v / bmax;
+    return `<rect class="bar" x="${x(i)-2}" y="${bh-bp-h_}" width="4" height="${h_}"/>`;
+  }).join('');
+  $('#ch-verdicts').innerHTML = `
+    <g>
+      <line class="axis" x1="${bp}" y1="${bh-bp}" x2="${bw-bp}" y2="${bh-bp}"/>
+      ${bars}
+      <text class="lbl" x="${bw-bp}" y="${bp+10}" text-anchor="end">max certs/bucket ${bmax}</text>
+    </g>`;
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// ANALYTICS
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshAnalytics() {
+  const w = $('#an-window').value, b = $('#an-bucket').value;
+  const s = await fetchJSON(`/v1/admin/analytics/summary?window_s=${w}&bucket_s=${b}`);
+  state.analytics = s;
+  sparkline($('#an-req'),  s.buckets.requests, {bars:true});
+  sparkline($('#an-p99'),  s.buckets.p99_ms);
+  sparkline($('#an-cert'), s.buckets.certs,    {bars:true});
+  sparkline($('#an-err'),  s.buckets.errors,   {bars:true});
+
+  const rows = s.buckets.starts_ts.map((t, i) => ({
+    bucket_utc: new Date(t*1000).toISOString(),
+    reqs:    s.buckets.requests[i],
+    certs:   s.buckets.certs[i],
+    errors:  s.buckets.errors[i],
+    p99_ms:  s.buckets.p99_ms[i],
+  }));
+  $('#an-table tbody').innerHTML = rows.map(r =>
+    `<tr><td>${esc(r.bucket_utc)}</td><td>${r.reqs}</td><td>${r.certs}</td><td>${r.errors}</td><td>${r.p99_ms}</td></tr>`
+  ).join('');
+}
+$('#an-window').onchange = refreshAnalytics;
+$('#an-bucket').onchange = refreshAnalytics;
+$('#btn-an-refresh').onclick = refreshAnalytics;
+$('#btn-an-csv').onclick = () => {
+  const s = state.analytics; if (!s) return;
+  const rows = s.buckets.starts_ts.map((t,i) => ({
+    bucket_utc: new Date(t*1000).toISOString(),
+    reqs: s.buckets.requests[i], certs: s.buckets.certs[i],
+    errors: s.buckets.errors[i], p99_ms: s.buckets.p99_ms[i],
+  }));
+  downloadBlob(toCSV(rows, ['bucket_utc','reqs','certs','errors','p99_ms']),
+               'trustlens-analytics-'+Date.now()+'.csv', 'text/csv');
+};
+$('#btn-an-json').onclick = () => {
+  const s = state.analytics; if (!s) return;
+  downloadBlob(JSON.stringify(s, null, 2), 'trustlens-analytics-'+Date.now()+'.json', 'application/json');
+};
+$('#btn-an-png').onclick = () => {
+  // Snapshot all four svgs into one canvas
+  const svgs = ['an-req','an-p99','an-cert','an-err'].map(id => document.getElementById(id));
+  const w = 1000, h = 600;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#000'; ctx.fillRect(0,0,w,h);
+  let done = 0;
+  svgs.forEach((svg, i) => {
+    const data = new XMLSerializer().serializeToString(svg);
+    const img = new Image();
+    img.onload = () => {
+      const x = (i%2) * (w/2), y = Math.floor(i/2) * (h/2);
+      ctx.drawImage(img, x, y, w/2, h/2);
+      done++;
+      if (done === svgs.length) {
+        c.toBlob(b => downloadBlob(b, 'trustlens-analytics-'+Date.now()+'.png', 'image/png'));
+      }
+    };
+    img.src = 'data:image/svg+xml;base64,'+btoa(data);
+  });
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// PLAYGROUND
+// ═════════════════════════════════════════════════════════════════════════
+$('#pg-tau').oninput = e => $('#pg-tau-v').textContent = (+e.target.value).toFixed(2);
+$('#pg-taup').oninput = e => $('#pg-taup-v').textContent = (+e.target.value).toFixed(2);
+
+async function playgroundSend() {
+  const model = $('#pg-model').value;
+  const tenant = $('#pg-tenant').value;
+  const tier = $('#pg-tier').value;
+  const tau = parseFloat($('#pg-tau').value);
+  const taup = parseFloat($('#pg-taup').value);
+  const stream = $('#pg-stream').checked;
+  const prompt = $('#pg-prompt').value;
+
+  $('#pg-out').textContent = '';
+  $('#pg-cert').innerHTML = '<span class="muted">waiting...</span>';
+  $('#pg-meta').textContent = `POST /v1/chat/completions · ${stream?'stream':'buffered'} · model=${model} τ=${tau} τ′=${taup}`;
+
+  const body = {
+    model, stream,
+    messages: [{role:'user', content: prompt}],
+    trustlens: {
+      tenant_id: tenant, tau, tau_prime: taup,
+      ...(tier ? {verification_tier: tier} : {}),
+    },
+  };
+  const t0 = performance.now();
+  try {
+    if (stream) {
+      const resp = await fetch('/v1/chat/completions', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-TrustLens-Tenant-Id':tenant},
+        body: JSON.stringify(body),
+      });
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = ''; let ann = null;
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, {stream:true});
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6);
+          if (payload.trim() === '[DONE]') continue;
+          try {
+            const obj = JSON.parse(payload);
+            if (obj.choices) {
+              for (const ch of obj.choices) {
+                const d = (ch.delta && ch.delta.content) || '';
+                if (d) $('#pg-out').textContent += d;
+              }
+            }
+            if (obj.trustlens) ann = obj.trustlens;
+          } catch {}
+        }
+      }
+      renderCert(ann, performance.now() - t0);
+    } else {
+      const r = await fetch('/v1/chat/completions', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-TrustLens-Tenant-Id':tenant},
+        body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      $('#pg-out').textContent = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || JSON.stringify(j, null, 2);
+      renderCert(j.trustlens || null, performance.now() - t0);
+    }
+  } catch (e) {
+    $('#pg-cert').innerHTML = '<span class="dim">error: '+esc(e.message)+'</span>';
+  }
+}
+function renderCert(ann, elapsedMs) {
+  if (!ann) {
+    $('#pg-cert').innerHTML = '<span class="muted">no cert (verify off or error)</span>';
+    return;
+  }
+  const mark = statusMark(ann.certificate_status);
+  $('#pg-cert').innerHTML = `
+    <div>${mark} <b>${esc(ann.certificate_status)}</b> · <span class="muted">${elapsedMs.toFixed(1)} ms total</span></div>
+    <div class="small dim">cert_id: <a href="#" data-cid="${esc(ann.certificate_id)}" class="cert-link">${esc(ann.certificate_id)}</a></div>
+    <div class="small dim">pipeline: ${esc(ann.pipeline_version)}</div>
+    <div class="small dim">rendered hash: ${esc(ann.renderable_text_hash)}</div>
+    <div class="small dim">masked claims: ${esc((ann.masked_claim_ids||[]).join(', ') || '—')}</div>
+    <div class="small dim">degradations: ${esc((ann.degradations||[]).join(', ') || '—')}</div>
+  `;
+  $$('#pg-cert .cert-link').forEach(a => a.onclick = e => {
+    e.preventDefault(); openCertDetail(a.dataset.cid);
+  });
+}
+$('#pg-send').onclick = playgroundSend;
+$('#pg-clear').onclick = () => { $('#pg-out').textContent = ''; $('#pg-cert').innerHTML = '<span class="muted">cleared</span>'; };
+
+// ═════════════════════════════════════════════════════════════════════════
+// τ-TUNING
+// ═════════════════════════════════════════════════════════════════════════
+$('#tn-run').onclick = async () => {
+  const prompt = $('#tn-prompt').value;
+  const model = $('#tn-model').value;
+  const tenant = $('#tn-tenant').value;
+  const taus = $('#tn-taus').value.split(',').map(s => parseFloat(s.trim())).filter(v=>!isNaN(v));
+  const tbody = $('#tn-matrix tbody');
+  tbody.innerHTML = '<tr><td colspan="4" class="muted">running sweep...</td></tr>';
+  const results = [];
+  for (const tau of taus) {
+    try {
+      const r = await fetch('/v1/chat/completions', {
+        method:'POST',
+        headers: {'Content-Type':'application/json','X-TrustLens-Tenant-Id':tenant},
+        body: JSON.stringify({
+          model, messages:[{role:'user', content: prompt}], stream: false,
+          trustlens: {tenant_id: tenant, tau, tau_prime: 0.10},
+        }),
+      });
+      const j = await r.json();
+      const ann = j.trustlens || {};
+      // Fetch the full cert for claim verdicts
+      let claims = [];
+      if (ann.certificate_id) {
+        try {
+          const c = await fetchJSON('/v1/admin/certs/'+ann.certificate_id);
+          claims = (c.payload && c.payload.claims) || [];
+        } catch {}
+      }
+      results.push({tau, status: ann.certificate_status, hash: ann.renderable_text_hash, claims});
+    } catch (e) {
+      results.push({tau, status: 'error', hash: '', claims: [], err: e.message});
+    }
+  }
+  state.tnResults = results;
+  tbody.innerHTML = results.map(r => `
+    <tr>
+      <td>${r.tau.toFixed(2)}</td>
+      <td>${statusMark(r.status)} ${esc(r.status||'')}</td>
+      <td>${esc((r.hash||'').slice(0,14))}…</td>
+      <td>${r.claims.map(c => `${esc(c.claim_id.slice(0,6))}=<b>${esc((c.verdict||'')[0]||'')}</b>`).join(' ')}</td>
+    </tr>`).join('');
+
+  // Capability curve = fraction of claims with verdict == verified
+  const series = results.map(r => {
+    const n = r.claims.length, v = r.claims.filter(c => c.verdict === 'verified').length;
+    return {tau: r.tau, cap: n>0 ? v/n : 0, n};
+  });
+  const w = 500, h = 160, pad = 30;
+  const xs = Math.min(...series.map(s=>s.tau)), xe = Math.max(...series.map(s=>s.tau));
+  const X = t => xs === xe ? w/2 : pad + (w-2*pad) * (t-xs)/(xe-xs);
+  const Y = c => h - pad - (h-2*pad)*c;
+  const poly = series.map(s => X(s.tau)+','+Y(s.cap)).join(' ');
+  const dots = series.map(s => `<circle cx="${X(s.tau)}" cy="${Y(s.cap)}" r="2" fill="#fff"/>
+    <text class="lbl" x="${X(s.tau)}" y="${Y(s.cap)-5}" text-anchor="middle">${s.cap.toFixed(2)}</text>`).join('');
+  $('#tn-curve').innerHTML = `<g>
+    <line class="axis" x1="${pad}" y1="${h-pad}" x2="${w-pad}" y2="${h-pad}"/>
+    <line class="axis" x1="${pad}" y1="${pad}"   x2="${pad}"   y2="${h-pad}"/>
+    <text class="lbl" x="${pad-4}" y="${pad+4}" text-anchor="end">1.0</text>
+    <text class="lbl" x="${pad-4}" y="${h-pad}" text-anchor="end">0.0</text>
+    <text class="lbl" x="${pad}"   y="${h-pad+12}">τ=${xs.toFixed(2)}</text>
+    <text class="lbl" x="${w-pad}" y="${h-pad+12}" text-anchor="end">τ=${xe.toFixed(2)}</text>
+    <polyline class="line" points="${poly}"/>
+    ${dots}
+  </g>`;
+};
+$('#tn-export').onclick = () => {
+  const r = state.tnResults || [];
+  const rows = r.flatMap(row => (row.claims || []).map(c => ({
+    tau: row.tau, status: row.status, claim_id: c.claim_id,
+    verdict: c.verdict, support: c.support_mass, contradiction: c.contradiction_mass,
+  })));
+  downloadBlob(toCSV(rows, ['tau','status','claim_id','verdict','support','contradiction']),
+               'trustlens-tuning-'+Date.now()+'.csv', 'text/csv');
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// CERTIFICATES
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshCerts() {
+  const tenant = $('#ct-tenant').value;
+  const status = $('#ct-status').value;
+  const limit  = $('#ct-limit').value;
+  const search = $('#ct-search').value.toLowerCase();
+  const q = new URLSearchParams({limit});
+  if (tenant) q.set('tenant_id', tenant);
+  const r = await fetchJSON('/v1/admin/certs?'+q);
+  const filtered = r.filter(c =>
+    (!status || c.cert_status === status) &&
+    (!search || (c.cert_id+(c.model_id||'')).toLowerCase().includes(search))
+  );
+  state.certs = filtered;
+  $('#ct-table tbody').innerHTML = filtered.map(c => `<tr class="clk" data-cid="${esc(c.cert_id)}">
+    <td>${esc((c.issued_at||'').replace('T',' ').replace(/\..*/, ' '))}</td>
+    <td>${esc(c.tenant_id)}</td>
+    <td>${esc(c.cert_id.slice(0,18))}…</td>
+    <td>${statusMark(c.cert_status)} ${esc(c.cert_status)}</td>
+    <td>${esc(c.n_claims)}</td>
+    <td>${esc(c.n_renderable)}</td>
+    <td>${esc(c.model_id||'')}</td>
+    <td>${esc(c.pipeline_version||'')}</td>
+  </tr>`).join('');
+  $$('#ct-table tbody tr').forEach(tr => {
+    tr.onclick = () => openCertDetail(tr.dataset.cid);
+  });
+}
+$('#ct-refresh').onclick = refreshCerts;
+$('#ct-search').oninput  = refreshCerts;
+$('#ct-tenant').onchange = refreshCerts;
+$('#ct-status').onchange = refreshCerts;
+$('#ct-limit').onchange  = refreshCerts;
+$('#ct-export').onclick  = () => {
+  const rows = state.certs;
+  downloadBlob(
+    toCSV(rows, ['issued_at','tenant_id','cert_id','cert_status','n_claims','n_renderable','model_id','pipeline_version']),
+    'trustlens-certs-'+Date.now()+'.csv', 'text/csv'
+  );
+};
+
+async function openCertDetail(cid) {
+  $('#m-title').textContent = '∎ CERT · ' + cid.slice(0, 20) + '…';
+  $('#m-body').textContent = 'loading...';
+  $('#modal').classList.add('open');
+  try {
+    const cert = await fetchJSON('/v1/admin/certs/'+cid);
+    $('#m-body').textContent = JSON.stringify(cert, null, 2);
+    $('#m-copy').onclick = () => navigator.clipboard.writeText(JSON.stringify(cert, null, 2));
+  } catch (e) {
+    $('#m-body').textContent = 'error: ' + e.message;
+  }
+}
+$('#m-close').onclick = () => $('#modal').classList.remove('open');
+$('#modal').onclick = e => { if (e.target.id==='modal') $('#modal').classList.remove('open'); };
+
+// ═════════════════════════════════════════════════════════════════════════
+// TENANTS
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshTenants() {
+  try {
+    const r = await fetchJSON('/v1/admin/tenants');
+    state.tenants = r;
+    // populate tenant selectors everywhere
+    const opts = r.map(t => `<option value="${esc(t.tenant_id)}">${esc(t.tenant_id)}</option>`).join('');
+    $('#ten-sel').innerHTML = opts || '<option>demo</option>';
+    $('#pg-tenant').innerHTML = opts;
+    $('#kb-tenant').innerHTML = opts;
+    $('#tn-tenant').innerHTML = opts;
+    $('#ct-tenant').innerHTML = '<option value="">(all)</option>'+opts;
+
+    $('#tn-table tbody').innerHTML = r.map(t => `<tr>
+      <td>${esc(t.tenant_id)}</td>
+      <td>${esc(t.tier)}</td>
+      <td>${t.tau}</td>
+      <td>${t.tau_prime}</td>
+      <td>${t.max_rps}</td>
+      <td>${t.max_tokens_per_minute}</td>
+      <td>${t.verify_deadline_ms} ms</td>
+      <td>${esc((t.allowed_backends||[]).join(','))}</td>
+      <td>${esc((t.allowed_oracles||[]).join(',')||'—')}</td>
+    </tr>`).join('');
+  } catch (e) {}
+}
+refreshTenants();
+
+// ═════════════════════════════════════════════════════════════════════════
+// KB
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshKB() {
+  const t = $('#kb-tenant').value;
+  try {
+    const s = await fetchJSON('/v1/kb/status?tenant_id='+encodeURIComponent(t));
+    $('#kb-size').textContent = s.index_size;
+    $('#kb-loaded').textContent = s.loaded_at ? new Date(s.loaded_at*1000).toISOString() : '—';
+    $('#kb-utn').textContent = s.unique_tenants || 1;
+  } catch (e) {
+    $('#kb-size').textContent = '—';
+  }
+}
+$('#kb-refresh').onclick = refreshKB;
+$('#kb-tenant').onchange = refreshKB;
+$('#kb-load').onclick = async () => {
+  const payload = $('#kb-payload').value;
+  $('#kb-load-msg').textContent = 'loading...';
+  try {
+    const r = await fetch('/v1/kb/load', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: payload,
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(JSON.stringify(j));
+    $('#kb-load-msg').textContent = '✓ loaded '+j.loaded+' docs · index_size='+j.index_size;
+    refreshKB();
+  } catch (e) {
+    $('#kb-load-msg').textContent = '✗ '+e.message;
+  }
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// OFFLINE VERIFY (best-effort structural check against running gateway)
+// ═════════════════════════════════════════════════════════════════════════
+$('#vf-run').onclick = async () => {
+  const raw = $('#vf-json').value.trim();
+  const out = $('#vf-out');
+  out.innerHTML = 'parsing...';
+  try {
+    const cert = JSON.parse(raw);
+    const checks = [];
+    checks.push(['shape: cert_id',       !!cert.cert_id]);
+    checks.push(['shape: signature',     !!cert.signature]);
+    checks.push(['shape: payload',       !!cert.payload]);
+    checks.push(['shape: claims array',  Array.isArray(cert.payload && cert.payload.claims)]);
+    checks.push(['pipeline_version',     !!(cert.payload && cert.payload.pipeline_version)]);
+
+    // Check pipeline version matches running gateway
+    try {
+      const h = await fetchJSON('/healthz');
+      const match = h.pipeline_version === (cert.payload && cert.payload.pipeline_version);
+      checks.push(['matches live pipeline ('+h.pipeline_version+')', match]);
+    } catch {}
+
+    // If the cert is in the store, we can round-trip it
+    if (cert.cert_id) {
+      try {
+        const server = await fetchJSON('/v1/admin/certs/'+cert.cert_id);
+        checks.push(['cert_id known to gateway store', true]);
+        checks.push(['server signature matches',        server.signature === cert.signature]);
+      } catch {
+        checks.push(['cert_id known to gateway store', false]);
+      }
+    }
+    out.innerHTML = checks.map(([n,ok]) => `<div>${ok?'✓':'✗'} ${esc(n)}</div>`).join('');
+    $('#vf-msg').textContent = checks.every(c=>c[1]) ? 'ok' : 'issues found — use trustlens verify CLI for full proof';
+  } catch (e) {
+    out.innerHTML = '<span class="dim">parse error: '+esc(e.message)+'</span>';
+    $('#vf-msg').textContent = 'parse error';
+  }
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// KEYBOARD
+// ═════════════════════════════════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  if (e.target.matches('input, textarea, select')) return;
+  if (e.key === '/') { e.preventDefault(); $('#log-filter').focus(); }
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// AUTH · login overlay · permission-aware nav
+// ═════════════════════════════════════════════════════════════════════════
+state.me = null;
+async function bootstrapAuth() {
+  try {
+    const r = await fetchJSON('/v1/auth/me');
+    if (r.authenticated) {
+      state.me = r;
+      $('#login-scrim').classList.add('hidden');
+      $('#kv-user').textContent = r.email;
+      $('#kv-role').textContent = r.role;
+      applyPermissions();
+    } else {
+      showLogin();
+    }
+  } catch {
+    showLogin();
+  }
+}
+function showLogin() {
+  $('#login-scrim').classList.remove('hidden');
+}
+function applyPermissions() {
+  const perms = new Set((state.me && state.me.permissions) || []);
+  $$('.nav .item').forEach(el => {
+    const p = el.dataset.perm;
+    if (p && !perms.has(p)) el.classList.add('locked');
+    else el.classList.remove('locked');
+  });
+}
+$('#lg-btn').addEventListener('click', async () => {
+  const email = $('#lg-email').value.trim();
+  const pass  = $('#lg-pass').value;
+  $('#lg-err').classList.add('hidden');
+  try {
+    const r = await fetch('/v1/auth/login', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({email, password: pass}),
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.reason || 'login_failed');
+    await bootstrapAuth();
+  } catch (e) {
+    $('#lg-err').textContent = '✗ ' + e.message;
+    $('#lg-err').classList.remove('hidden');
+  }
+});
+$('#lg-oidc').addEventListener('click', async () => {
+  try {
+    const r = await fetchJSON('/v1/auth/oidc/start');
+    window.location.href = r.url;
+  } catch (e) {
+    $('#lg-err').textContent = '✗ OIDC not configured';
+    $('#lg-err').classList.remove('hidden');
+  }
+});
+$('#btn-signout').addEventListener('click', async () => {
+  try { await fetch('/v1/auth/logout', {method:'POST'}); } catch {}
+  state.me = null;
+  $('#kv-user').textContent = '-';
+  $('#kv-role').textContent = '-';
+  showLogin();
+});
+// Gate nav clicks by permission
+$$('.nav .item').forEach(el => {
+  el.addEventListener('click', e => {
+    if (el.classList.contains('locked')) { e.stopImmediatePropagation(); }
+  }, true);
+});
+bootstrapAuth();
+
+// ═════════════════════════════════════════════════════════════════════════
+// AXES · 3-axis live gauges + time-series + scatter
+// ═════════════════════════════════════════════════════════════════════════
+function drawGauge(svg, value, min=0, max=1) {
+  // Half-circle gauge from 180° to 0°
+  const cx = 70, cy = 78, r = 56;
+  const v = Math.max(min, Math.min(max, value));
+  const frac = (v - min) / (max - min || 1);
+  const angle = Math.PI * (1 - frac);
+  const ex = cx + r * Math.cos(angle);
+  const ey = cy - r * Math.sin(angle);
+  svg.innerHTML = `
+    <path d="M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}"
+          fill="none" stroke="#333" stroke-width="6"/>
+    <path d="M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${ex} ${ey}"
+          fill="none" stroke="#fff" stroke-width="6"/>
+    <line x1="${cx}" y1="${cy}" x2="${ex}" y2="${ey}" stroke="#fff" stroke-width="1.5"/>
+    <circle cx="${cx}" cy="${cy}" r="3" fill="#fff"/>
+    <text class="lbl" x="${cx-r}" y="${cy+12}" text-anchor="start">${min.toFixed(1)}</text>
+    <text class="lbl" x="${cx+r}" y="${cy+12}" text-anchor="end">${max.toFixed(1)}</text>
+  `;
+}
+async function refreshAxes() {
+  const sec = document.querySelector('section[data-view=axes]');
+  if (!sec || sec.classList.contains('hidden')) return;
+  try {
+    const s = await fetchJSON('/v1/admin/axes/summary?window_s=300');
+    drawGauge($('#ax-g-int'),  s.internal.mean,   0, 1);
+    drawGauge($('#ax-g-ext'),  s.external.mean,   0, 1);
+    drawGauge($('#ax-g-syco'), s.sycophancy.mean, -1, 1);
+    $('#ax-v-int').textContent  = s.internal.mean.toFixed(2);
+    $('#ax-v-ext').textContent  = s.external.mean.toFixed(2);
+    $('#ax-v-syco').textContent = s.sycophancy.mean.toFixed(2);
+  } catch {}
+  try {
+    const pts = await fetchJSON('/v1/admin/axes/recent?limit=200&since_s=300');
+    drawAxisTimeSeries(pts);
+    drawAxisScatter(pts);
+  } catch {}
+}
+function drawAxisTimeSeries(pts) {
+  const svg = $('#ax-chart');
+  if (!pts.length) { svg.innerHTML = ''; return; }
+  const w = 800, h = 180, pad = 22;
+  const tmin = pts[0].ts, tmax = pts[pts.length-1].ts;
+  const X = t => pad + (w-2*pad) * (tmax===tmin ? 0.5 : (t-tmin)/(tmax-tmin));
+  const YV = v => h-pad - (h-2*pad) * v;            // 0..1
+  const YS = v => h-pad - (h-2*pad) * (v+1)/2;      // -1..1
+  const poly = (key, cls, scale) => pts.map(p => X(p.ts)+','+scale(p[key])).join(' ');
+  svg.innerHTML = `
+    <line class="axis" x1="${pad}" y1="${pad}"   x2="${pad}"   y2="${h-pad}"/>
+    <line class="axis" x1="${pad}" y1="${h-pad}" x2="${w-pad}" y2="${h-pad}"/>
+    <text class="lbl"  x="${pad-2}" y="${pad+4}" text-anchor="end">1.0</text>
+    <text class="lbl"  x="${pad-2}" y="${h-pad}" text-anchor="end">0</text>
+    <polyline class="line"  points="${poly('internal', '', YV)}"/>
+    <polyline class="line2" points="${poly('external', '', YV)}"/>
+    <polyline class="line2" stroke-dasharray="1 2" points="${poly('sycophancy','',YS)}"/>
+  `;
+}
+function drawAxisScatter(pts) {
+  const svg = $('#ax-scatter');
+  if (!pts.length) { svg.innerHTML = ''; return; }
+  const w = 400, h = 260, pad = 30;
+  const X = v => pad + (w-2*pad) * v;
+  const Y = v => h-pad - (h-2*pad) * v;
+  const dots = pts.map(p => {
+    const r_ = 2 + 4*Math.abs(p.sycophancy);
+    return `<circle cx="${X(p.internal)}" cy="${Y(p.external)}" r="${r_}" fill="${p.overall_status==='blocked'?'#555':'#fff'}" stroke="#fff" stroke-opacity=".3"/>`;
+  }).join('');
+  svg.innerHTML = `
+    <line class="axis" x1="${pad}" y1="${h-pad}" x2="${w-pad}" y2="${h-pad}"/>
+    <line class="axis" x1="${pad}" y1="${pad}"   x2="${pad}"   y2="${h-pad}"/>
+    <line class="grid" x1="${pad}" y1="${Y(0.5)}" x2="${w-pad}" y2="${Y(0.5)}"/>
+    <line class="grid" x1="${X(0.5)}" y1="${pad}" x2="${X(0.5)}" y2="${h-pad}"/>
+    <text class="lbl" x="${pad}"     y="${h-pad+12}">internal 0</text>
+    <text class="lbl" x="${w-pad}"   y="${h-pad+12}" text-anchor="end">internal 1</text>
+    <text class="lbl" x="${pad+2}"   y="${pad+10}">external 1</text>
+    <text class="lbl" x="${pad+2}"   y="${h-pad-2}">external 0</text>
+    ${dots}
+  `;
+  $('#ax-scatter-summary').textContent = pts.slice(-6).map(p => p.cert_id.slice(0,10)+'…').join('  ');
+}
+setInterval(refreshAxes, 3000);
+
+// ═════════════════════════════════════════════════════════════════════════
+// INCIDENTS
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshIncidents() {
+  const sec = document.querySelector('section[data-view=incidents]');
+  if (!sec || sec.classList.contains('hidden')) return;
+  const q = new URLSearchParams({limit: 200});
+  if ($('#inc-sev').value)   q.set('severity', $('#inc-sev').value);
+  if ($('#inc-kind').value)  q.set('kind',     $('#inc-kind').value);
+  if ($('#inc-acked').value) q.set('acked',    $('#inc-acked').value);
+  try {
+    const list = await fetchJSON('/v1/admin/incidents?' + q);
+    state.incidents = list;
+    const now = Date.now() / 1000;
+    $('#inc-k-crit').textContent = list.filter(i=>i.severity==='critical' && !i.acknowledged_at).length;
+    $('#inc-k-warn').textContent = list.filter(i=>i.severity==='warn'     && !i.acknowledged_at).length;
+    $('#inc-k-ssh').textContent  = list.filter(i=>i.kind==='ssh.critical' && (now-i.ts) < 900).length;
+    $('#inc-k-rad').textContent  = list.filter(i=>i.kind==='radcot.engage'&& (now-i.ts) < 900).length;
+
+    $('#inc-table tbody').innerHTML = list.map(i => `<tr>
+      <td>${esc(new Date(i.ts*1000).toISOString().replace('T',' ').replace(/\..*/, ' '))}</td>
+      <td class="sev-${esc(i.severity)}">${({critical:'✗', warn:'▲', info:'·'}[i.severity]||'?')} ${esc(i.severity)}</td>
+      <td>${esc(i.kind)}</td>
+      <td>${esc(i.title||'')}</td>
+      <td>${esc(i.tenant_id||'-')}</td>
+      <td>${esc((i.cert_id||'').slice(0,12))}${i.cert_id?'…':''}</td>
+      <td>${i.acknowledged_at ? '✓ '+esc(i.acknowledged_by||'') : '○'}</td>
+      <td>${i.acknowledged_at ? '' : `<button class="small" data-ack="${esc(i.incident_id)}">ACK</button>`}</td>
+    </tr>`).join('');
+    $$('#inc-table button[data-ack]').forEach(b => b.onclick = async () => {
+      await fetch('/v1/admin/incidents/'+b.dataset.ack+'/ack', {
+        method: 'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({}),
+      });
+      refreshIncidents();
+    });
+  } catch (e) {
+    $('#inc-table tbody').innerHTML = '<tr><td colspan="8" class="muted">401 or empty</td></tr>';
+  }
+}
+$('#inc-refresh').onclick = refreshIncidents;
+$('#inc-sev').onchange   = refreshIncidents;
+$('#inc-kind').onchange  = refreshIncidents;
+$('#inc-acked').onchange = refreshIncidents;
+$('#inc-export').onclick = () => {
+  const rows = state.incidents || [];
+  downloadBlob(toCSV(rows, ['ts','severity','kind','title','tenant_id','cert_id','acknowledged_at','acknowledged_by']),
+               'trustlens-incidents-'+Date.now()+'.csv', 'text/csv');
+};
+setInterval(refreshIncidents, 4000);
+
+// ═════════════════════════════════════════════════════════════════════════
+// FEATURE SETTINGS
+// ═════════════════════════════════════════════════════════════════════════
+function wireToggle(sel, stateKey) {
+  const el = $(sel);
+  el.addEventListener('click', () => {
+    el.classList.toggle('on');
+    state.settings = state.settings || {};
+    state.settings[stateKey] = el.classList.contains('on');
+  });
+}
+wireToggle('#st-syco', 'sycophancy_enabled');
+wireToggle('#st-neg',  'negation_aware_enabled');
+wireToggle('#st-num',  'numeric_aware_enabled');
+wireToggle('#st-xnli', 'transformer_nli_enabled');
+wireToggle('#st-deep', 'deep_inspector_default');
+['#st-rho','#st-N','#st-alpha','#st-k'].forEach(sel => {
+  const el = $(sel), v = sel+'-v';
+  el.addEventListener('input', () => {
+    $(v).textContent = el.step < 1 ? parseFloat(el.value).toFixed(2) : el.value;
+  });
+});
+async function loadSettings() {
+  try {
+    const s = await fetchJSON('/v1/admin/settings');
+    state.settings = s;
+    for (const [k, sel] of [
+      ['sycophancy_enabled','#st-syco'],
+      ['negation_aware_enabled','#st-neg'],
+      ['numeric_aware_enabled','#st-num'],
+      ['transformer_nli_enabled','#st-xnli'],
+      ['deep_inspector_default','#st-deep'],
+    ]) $(sel).classList.toggle('on', !!s[k]);
+    if (s.ssh_threshold_rho != null)   { $('#st-rho').value = s.ssh_threshold_rho;   $('#st-rho-v').textContent   = s.ssh_threshold_rho.toFixed(2); }
+    if (s.ssh_compute_every_n != null) { $('#st-N').value   = s.ssh_compute_every_n; $('#st-N-v').textContent     = s.ssh_compute_every_n; }
+    if (s.steering_alpha != null)      { $('#st-alpha').value= s.steering_alpha;      $('#st-alpha-v').textContent = s.steering_alpha.toFixed(2); }
+    if (s.steering_top_k_layers != null){ $('#st-k').value   = s.steering_top_k_layers;$('#st-k-v').textContent    = s.steering_top_k_layers; }
+  } catch {}
+}
+$('#st-reload').onclick = loadSettings;
+$('#st-save').onclick = async () => {
+  const body = {
+    sycophancy_enabled:      $('#st-syco').classList.contains('on'),
+    negation_aware_enabled:  $('#st-neg').classList.contains('on'),
+    numeric_aware_enabled:   $('#st-num').classList.contains('on'),
+    transformer_nli_enabled: $('#st-xnli').classList.contains('on'),
+    deep_inspector_default:  $('#st-deep').classList.contains('on'),
+    ssh_threshold_rho:       parseFloat($('#st-rho').value),
+    ssh_compute_every_n:     parseInt($('#st-N').value, 10),
+    steering_alpha:          parseFloat($('#st-alpha').value),
+    steering_top_k_layers:   parseInt($('#st-k').value, 10),
+  };
+  try {
+    const r = await fetch('/v1/admin/settings', {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    $('#st-msg').textContent = r.ok ? '✓ saved' : '✗ '+r.status;
+  } catch (e) { $('#st-msg').textContent = '✗ '+e.message; }
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// USERS & ROLES
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshUsers() {
+  try {
+    const list = await fetchJSON('/v1/auth/users');
+    $('#us-table tbody').innerHTML = list.map(u => `<tr>
+      <td>${esc(u.user_id)}</td>
+      <td>${esc(u.email)}</td>
+      <td>${esc(u.display_name)}</td>
+      <td>${esc(u.role)}</td>
+      <td>${u.disabled?'✗':'·'}</td>
+      <td>${esc(new Date(u.created_at*1000).toISOString().slice(0,19).replace('T',' '))}</td>
+      <td><button class="small" data-del="${esc(u.user_id)}">DEL</button></td>
+    </tr>`).join('');
+    $$('#us-table button[data-del]').forEach(b => b.onclick = async () => {
+      if (!confirm('delete '+b.dataset.del+'?')) return;
+      await fetch('/v1/auth/users/'+b.dataset.del, {method:'DELETE'});
+      refreshUsers();
+    });
+  } catch {
+    $('#us-table tbody').innerHTML = '<tr><td colspan="7" class="muted">401 or empty</td></tr>';
+  }
+}
+$('#us-create').onclick = async () => {
+  const body = {
+    email: $('#us-email').value.trim(),
+    display_name: $('#us-name').value.trim(),
+    role: $('#us-role').value,
+    password: $('#us-pass').value || null,
+  };
+  try {
+    const r = await fetch('/v1/auth/users', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(JSON.stringify(j));
+    $('#us-msg').textContent = '✓ created '+j.user_id;
+    $('#us-email').value = ''; $('#us-name').value = ''; $('#us-pass').value = '';
+    refreshUsers();
+  } catch (e) {
+    $('#us-msg').textContent = '✗ '+e.message;
+  }
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// API KEYS
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshKeys() {
+  try {
+    const list = await fetchJSON('/v1/auth/keys');
+    $('#kys-table tbody').innerHTML = list.map(k => `<tr>
+      <td>${esc(k.key_id)}</td>
+      <td>${esc(k.name)}</td>
+      <td>${esc(k.tenant_id)}</td>
+      <td>${esc(k.role)}</td>
+      <td>${esc(new Date(k.created_at*1000).toISOString().slice(0,19).replace('T',' '))}</td>
+      <td>${k.last_used_at ? esc(new Date(k.last_used_at*1000).toISOString().slice(0,19).replace('T',' ')) : '—'}</td>
+      <td><button class="small" data-rv="${esc(k.key_id)}">REVOKE</button></td>
+    </tr>`).join('');
+    $$('#kys-table button[data-rv]').forEach(b => b.onclick = async () => {
+      await fetch('/v1/auth/keys/'+b.dataset.rv, {method:'DELETE'});
+      refreshKeys();
+    });
+  } catch {
+    $('#kys-table tbody').innerHTML = '<tr><td colspan="7" class="muted">401 or empty</td></tr>';
+  }
+}
+$('#kys-mint').onclick = async () => {
+  const body = {name: $('#kys-name').value, tenant_id: $('#kys-ten').value, role: $('#kys-role').value};
+  try {
+    const r = await fetch('/v1/auth/keys', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(JSON.stringify(j));
+    $('#kys-secret').textContent = j.secret;
+    $('#kys-secret-out').classList.remove('hidden');
+    $('#kys-msg').textContent = '✓ minted '+j.key.key_id;
+    refreshKeys();
+  } catch (e) { $('#kys-msg').textContent = '✗ '+e.message; }
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// INTEGRATIONS
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshIntegrations() {
+  try {
+    const list = await fetchJSON('/v1/admin/integrations');
+    const avail = list.find(x => x.kind === '__available__')?.available || [];
+    const rows  = list.filter(x => x.kind !== '__available__');
+    state.integrations = rows;
+    $('#int-kind').innerHTML = avail.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('');
+    $('#int-table tbody').innerHTML = rows.map(i => `<tr class="clk" data-kind="${esc(i.kind)}">
+      <td>${esc(i.kind)}</td>
+      <td>${esc(i.name)}</td>
+      <td>${i.enabled ? '● on' : '○ off'}</td>
+      <td>${esc((i.config_keys||[]).join(', ')||'—')}</td>
+      <td>${esc(new Date(i.updated_at*1000).toISOString().slice(0,19).replace('T',' '))}</td>
+      <td><button class="small" data-ed="${esc(i.kind)}">EDIT</button></td>
+    </tr>`).join('');
+    $$('#int-table button[data-ed]').forEach(b => b.onclick = () => {
+      const i = rows.find(x => x.kind === b.dataset.ed);
+      $('#int-kind').value = i.kind;
+      $('#int-name').value = i.name || i.kind;
+      $('#int-on').classList.toggle('on', !!i.enabled);
+      $('#int-config').value = '{}';  // config not exposed; edit to override
+    });
+  } catch {}
+}
+$('#int-on').addEventListener('click', () => $('#int-on').classList.toggle('on'));
+$('#int-save').onclick = async () => {
+  const kind = $('#int-kind').value;
+  let config = {};
+  try { config = JSON.parse($('#int-config').value || '{}'); } catch (e) {
+    $('#int-msg').textContent = '✗ config JSON parse: '+e.message; return;
+  }
+  try {
+    const r = await fetch('/v1/admin/integrations/'+encodeURIComponent(kind), {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        name: $('#int-name').value || kind,
+        enabled: $('#int-on').classList.contains('on'),
+        config,
+      }),
+    });
+    $('#int-msg').textContent = r.ok ? '✓ saved' : '✗ '+r.status;
+    refreshIntegrations();
+  } catch (e) { $('#int-msg').textContent = '✗ '+e.message; }
+};
+$('#int-del').onclick = async () => {
+  const kind = $('#int-kind').value;
+  await fetch('/v1/admin/integrations/'+encodeURIComponent(kind), {method:'DELETE'});
+  refreshIntegrations();
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// KB — full CRUD + versions
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshKBFull() {
+  const t = $('#kb-tenant').value;
+  try {
+    const s = await fetchJSON('/v1/kb/status?tenant_id='+encodeURIComponent(t));
+    $('#kb-size').textContent = s.index_size;
+    $('#kb-loaded').textContent = s.loaded_at ? new Date(s.loaded_at*1000).toISOString().slice(0,19).replace('T',' ') : '—';
+  } catch {}
+  try {
+    const docs = await fetchJSON('/v1/admin/kb/'+encodeURIComponent(t)+'/docs');
+    $('#kb-doctable tbody').innerHTML = docs.map(d => `<tr>
+      <td><input type="checkbox" class="kb-row-sel" data-did="${esc(d.doc_id)}"/></td>
+      <td>${esc(d.doc_id)}</td>
+      <td>${esc(d.source_uri||'')}</td>
+      <td>${esc((d.text||'').slice(0,120))}${d.text.length>120?'…':''}</td>
+      <td><button class="small" data-ed-doc="${esc(d.doc_id)}">EDIT</button></td>
+    </tr>`).join('');
+    $$('#kb-doctable button[data-ed-doc]').forEach(b => b.onclick = () => {
+      const d = docs.find(x => x.doc_id === b.dataset.edDoc);
+      $('#kb-ed-id').value = d.doc_id;
+      $('#kb-ed-uri').value = d.source_uri || '';
+      $('#kb-ed-text').value = d.text;
+    });
+  } catch {}
+  try {
+    const versions = await fetchJSON('/v1/admin/kb/'+encodeURIComponent(t)+'/versions');
+    state.kbVersions = versions;
+    if (versions.length) $('#kb-curv').textContent = 'v'+versions[versions.length-1].version;
+    $('#kb-versions tbody').innerHTML = versions.slice().reverse().map(v => `<tr>
+      <td>v${v.version}</td>
+      <td>${esc(new Date(v.committed_at*1000).toISOString().slice(0,19).replace('T',' '))}</td>
+      <td>${v.doc_count}</td>
+      <td>${esc(v.committed_by||'-')}</td>
+      <td>${esc(v.summary)}</td>
+      <td><button class="small" data-rev="${v.version}">REVERT</button></td>
+    </tr>`).join('');
+    $$('#kb-versions button[data-rev]').forEach(b => b.onclick = async () => {
+      if (!confirm('revert to v'+b.dataset.rev+' ?')) return;
+      await fetch('/v1/admin/kb/revert', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({tenant_id: $('#kb-tenant').value, version: parseInt(b.dataset.rev, 10)}),
+      });
+      refreshKBFull();
+    });
+  } catch {}
+}
+$('#kb-refresh').onclick = refreshKBFull;
+$('#kb-tenant').onchange = refreshKBFull;
+$('#kb-sel-all').onclick = () => {
+  $$('#kb-doctable .kb-row-sel').forEach(cb => cb.checked = $('#kb-sel-all').checked);
+};
+$('#kb-del-sel').onclick = async () => {
+  const ids = [...$$('#kb-doctable .kb-row-sel')].filter(cb => cb.checked).map(cb => cb.dataset.did);
+  if (!ids.length || !confirm('delete '+ids.length+' docs?')) return;
+  await fetch('/v1/admin/kb/delete', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({tenant_id: $('#kb-tenant').value, doc_ids: ids}),
+  });
+  refreshKBFull();
+};
+$('#kb-new').onclick = () => { $('#kb-ed-id').value=''; $('#kb-ed-uri').value=''; $('#kb-ed-text').value=''; };
+$('#kb-ed-clear').onclick = () => { $('#kb-ed-id').value=''; $('#kb-ed-uri').value=''; $('#kb-ed-text').value=''; };
+$('#kb-ed-save').onclick = async () => {
+  const id = $('#kb-ed-id').value.trim();
+  const text = $('#kb-ed-text').value.trim();
+  if (!id || !text) { $('#kb-ed-msg').textContent = '✗ id + text required'; return; }
+  try {
+    const r = await fetch('/v1/admin/kb/upsert', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        tenant_id: $('#kb-tenant').value,
+        documents: [{doc_id:id, text, source_uri: $('#kb-ed-uri').value || null, metadata:{}}],
+      }),
+    });
+    const j = await r.json();
+    $('#kb-ed-msg').textContent = r.ok ? '✓ v'+j.version+' · '+j.summary : '✗ '+r.status;
+    refreshKBFull();
+  } catch (e) { $('#kb-ed-msg').textContent = '✗ '+e.message; }
+};
+$('#kb-load').onclick = async () => {
+  let body;
+  try { body = JSON.parse($('#kb-payload').value); }
+  catch (e) { $('#kb-load-msg').textContent = '✗ JSON parse'; return; }
+  // translate to the versioned upsert
+  const docs = (body.documents || []).map(d => ({...d, metadata: d.metadata || {}}));
+  try {
+    const r = await fetch('/v1/admin/kb/upsert', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({tenant_id: body.tenant_id, documents: docs}),
+    });
+    const j = await r.json();
+    $('#kb-load-msg').textContent = r.ok ? '✓ v'+j.version+' · '+j.summary : '✗ '+r.status;
+    refreshKBFull();
+  } catch (e) { $('#kb-load-msg').textContent = '✗ '+e.message; }
+};
+$('#kb-export-jsonl').onclick = () => {
+  window.location.href = '/v1/admin/kb/'+encodeURIComponent($('#kb-tenant').value)+'/export?fmt=jsonl';
+};
+$('#kb-export-csv').onclick = () => {
+  window.location.href = '/v1/admin/kb/'+encodeURIComponent($('#kb-tenant').value)+'/export?fmt=csv';
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// VIEW-AWARE LOADERS — refresh data when a section is opened
+// ═════════════════════════════════════════════════════════════════════════
+const origSetView = setView;
+setView = function(v) {
+  origSetView(v);
+  if (v === 'axes')         refreshAxes();
+  if (v === 'incidents')    refreshIncidents();
+  if (v === 'settings')     loadSettings();
+  if (v === 'users')        refreshUsers();
+  if (v === 'keys')         refreshKeys();
+  if (v === 'integrations') refreshIntegrations();
+  if (v === 'kb')           refreshKBFull();
+  if (v === 'comp_overview')  refreshCmpOverview();
+  if (v === 'comp_audit')     refreshAuditLog();
+  if (v === 'comp_dsar')      refreshDSAR();
+  if (v === 'comp_consent')   refreshConsent();
+  if (v === 'comp_retention') refreshRetention();
+  if (v === 'comp_breach')    refreshBreach();
+  if (v === 'comp_risks')   { refreshRisks(); refreshAIIA(); }
+  if (v === 'comp_cards')     refreshCards();
+  if (v === 'comp_profile')   refreshProfile();
+};
+$$('.nav .item').forEach(el => {
+  el.onclick = () => { if (!el.classList.contains('locked')) setView(el.dataset.view); };
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// COMPLIANCE · framework grid + control detail
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshCmpOverview() {
+  try {
+    const r = await fetchJSON('/v1/admin/compliance/overview');
+    const g = r.global;
+    $('#cmp-ver').textContent   = g.compliance_version;
+    $('#cmp-n').textContent     = g.n_frameworks;
+    $('#cmp-score').textContent = g.mean_score.toFixed(3);
+    const list = await fetchJSON('/v1/admin/compliance/frameworks');
+    state.frameworks = list;
+    $('#cmp-grid tbody').innerHTML = list.map(f => `<tr class="clk" data-fid="${esc(f.id)}">
+      <td>${esc(f.short_name)} <span class="muted small">${esc(f.name)}</span></td>
+      <td>${esc(f.jurisdiction)}</td>
+      <td>${f.status.ship}</td>
+      <td>${f.status.partial}</td>
+      <td>${f.status.near}</td>
+      <td>${f.status.gap}</td>
+      <td><b>${f.status.score.toFixed(2)}</b></td>
+      <td><button class="small" data-fid-open="${esc(f.id)}">VIEW</button></td>
+    </tr>`).join('');
+    $$('#cmp-grid button[data-fid-open]').forEach(b => b.onclick = async () => {
+      const fid = b.dataset.fidOpen;
+      const detail = await fetchJSON('/v1/admin/compliance/frameworks/' + encodeURIComponent(fid));
+      $('#cmp-controls tbody').innerHTML = detail.controls.map(c => `<tr>
+        <td><span class="kbd">${esc(c.id)}</span></td>
+        <td>${({ship:'∎ SHIP', partial:'◐ PARTIAL', near:'○ NEAR', gap:'✗ GAP'}[c.status]||esc(c.status))}</td>
+        <td>${esc(c.title)}</td>
+        <td class="muted">${esc((c.evidence||[]).join(' · '))}${c.notes?(' · '+esc(c.notes)):''}</td>
+      </tr>`).join('');
+    });
+  } catch (e) {}
+}
+$('#cmp-refresh').onclick = refreshCmpOverview;
+$('#cmp-export').onclick = async () => {
+  const data = await fetchJSON('/v1/admin/compliance/frameworks');
+  downloadBlob(JSON.stringify(data, null, 2), 'trustlens-compliance-frameworks.json', 'application/json');
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// COMPLIANCE · audit log
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshAuditLog() {
+  const params = new URLSearchParams({limit: 500});
+  if ($('#al-pref').value) params.set('action_prefix', $('#al-pref').value);
+  if ($('#al-ten').value)  params.set('tenant_id',     $('#al-ten').value);
+  try {
+    const list = await fetchJSON('/v1/admin/compliance/audit-log?' + params);
+    state.auditLog = list;
+    $('#ax-n').textContent = list.length;
+    if (list.length) {
+      const last = list[list.length-1];
+      $('#ax-actor').textContent = last.actor;
+      $('#ax-act').textContent   = last.action;
+    } else {
+      $('#ax-actor').textContent = '—';
+      $('#ax-act').textContent   = '—';
+    }
+    $('#al-table tbody').innerHTML = list.slice().reverse().map(e => `<tr>
+      <td>${e.seq}</td>
+      <td>${esc(new Date(e.ts*1000).toISOString().slice(0,19).replace('T',' '))}</td>
+      <td>${esc(e.actor)}</td>
+      <td>${esc(e.actor_role||'-')}</td>
+      <td>${esc(e.action)}</td>
+      <td>${esc(e.resource||'-')}</td>
+      <td>${esc(e.outcome)}</td>
+      <td><span class="kbd">${esc(e.hash.slice(0,8))}</span></td>
+    </tr>`).join('');
+  } catch {}
+  try {
+    const v = await fetchJSON('/v1/admin/compliance/audit-log/verify');
+    $('#ax-chk').textContent = v.ok ? '∎ unbroken' : ('✗ broken @' + v.first_break_seq);
+  } catch {}
+}
+$('#al-refresh').onclick = refreshAuditLog;
+$('#al-pref').oninput    = () => clearTimeout(state._alT) || (state._alT = setTimeout(refreshAuditLog, 250));
+$('#al-ten').oninput     = () => clearTimeout(state._alT) || (state._alT = setTimeout(refreshAuditLog, 250));
+$('#al-verify').onclick = async () => {
+  const v = await fetchJSON('/v1/admin/compliance/audit-log/verify');
+  alert((v.ok ? '∎ Chain verified — ' : '✗ Chain BROKEN at seq ' + v.first_break_seq + ' — ')
+        + v.n_events + ' events');
+};
+$('#al-export-jsonl').onclick = () =>
+  window.location.href = '/v1/admin/compliance/audit-log/export?fmt=jsonl';
+$('#al-export-csv').onclick = () =>
+  window.location.href = '/v1/admin/compliance/audit-log/export?fmt=csv';
+setInterval(() => {
+  const sec = document.querySelector('section[data-view=comp_audit]');
+  if (sec && !sec.classList.contains('hidden')) refreshAuditLog();
+}, 4000);
+
+// ═════════════════════════════════════════════════════════════════════════
+// COMPLIANCE · DSAR
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshDSAR() {
+  try {
+    const summary = await fetchJSON('/v1/admin/compliance/dsar/summary');
+    $('#ds-tot').textContent  = summary.total;
+    $('#ds-open').textContent = summary.open;
+    $('#ds-od').textContent   = summary.overdue;
+    const list = await fetchJSON('/v1/admin/compliance/dsar');
+    $('#ds-ff').textContent = list.filter(r => r.status === 'fulfilled').length;
+    state.dsar = list;
+    $('#ds-table tbody').innerHTML = list.map(r => {
+      const days = ((r.deadline_at - Date.now()/1000) / 86400).toFixed(1);
+      return `<tr>
+        <td>${esc(r.request_id)}</td>
+        <td>${esc(r.tenant_id)}</td>
+        <td>${esc(r.data_subject_id.slice(0,18))}</td>
+        <td>${esc(r.type)}</td>
+        <td>${esc(r.jurisdiction)}</td>
+        <td>${esc(new Date(r.submitted_at*1000).toISOString().slice(0,10))}</td>
+        <td>${esc(new Date(r.deadline_at*1000).toISOString().slice(0,10))}</td>
+        <td>${days}</td>
+        <td>${esc(r.status)}</td>
+        <td>${r.status==='fulfilled'||r.status==='rejected'?'':
+          `<button class="small" data-ds-ff="${esc(r.request_id)}">FULFIL</button>
+           <button class="small" data-ds-rj="${esc(r.request_id)}">REJECT</button>`}</td>
+      </tr>`;
+    }).join('');
+    $$('#ds-table button[data-ds-ff]').forEach(b => b.onclick = async () => {
+      await fetch('/v1/admin/compliance/dsar/'+b.dataset.dsFf, {
+        method:'PATCH', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({status:'fulfilled', note:'fulfilled via dashboard'}),
+      });
+      refreshDSAR();
+    });
+    $$('#ds-table button[data-ds-rj]').forEach(b => b.onclick = async () => {
+      const reason = prompt('Lawful reason for rejection?') || 'manual';
+      await fetch('/v1/admin/compliance/dsar/'+b.dataset.dsRj, {
+        method:'PATCH', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({status:'rejected', rejection_reason: reason}),
+      });
+      refreshDSAR();
+    });
+  } catch {}
+}
+$('#ds-open-btn').onclick = async () => {
+  try {
+    const r = await fetch('/v1/admin/compliance/dsar', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        tenant_id:  $('#ds-ten').value,
+        data_subject_id: $('#ds-subj').value || ('hash:' + Math.random().toString(36).slice(2,12)),
+        type:       $('#ds-type').value,
+        jurisdiction: $('#ds-jur').value,
+        received_via: $('#ds-via').value,
+        contact:    $('#ds-ct').value,
+      }),
+    });
+    const j = await r.json();
+    $('#ds-msg').textContent = r.ok ? '✓ opened ' + j.request_id : '✗ ' + r.status;
+    refreshDSAR();
+  } catch (e) { $('#ds-msg').textContent = '✗ '+e.message; }
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// COMPLIANCE · consent
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshConsent() {
+  const t = $('#cs-ten').value;
+  try {
+    const sum = await fetchJSON('/v1/admin/compliance/consent/summary?tenant_id='+encodeURIComponent(t));
+    $('#cs-summary').innerHTML =
+      `<div class="panel kpi"><div class="title">TOTAL</div><div class="val">${sum.total}</div></div>` +
+      Object.entries(sum.by_purpose).slice(0,3).map(([p, d]) =>
+        `<div class="panel kpi"><div class="title">${esc(p)}</div>
+           <div class="val">${d.granted}/${d.granted+d.withdrawn}</div>
+           <div class="sub">granted / total</div></div>`).join('');
+    const list = await fetchJSON('/v1/admin/compliance/consent?tenant_id='+encodeURIComponent(t));
+    $('#cs-table tbody').innerHTML = list.map(r => `<tr>
+      <td>${esc(r.data_subject_id.slice(0,18))}</td>
+      <td>${esc(r.purpose)}</td>
+      <td>${esc(r.status)}</td>
+      <td>${esc(r.lawful_basis||'-')}</td>
+      <td>${esc(r.captured_via||'-')}</td>
+      <td>${esc((r.evidence_uri||'').slice(0,30))}</td>
+      <td>${esc(new Date(r.ts*1000).toISOString().slice(0,19).replace('T',' '))}</td>
+    </tr>`).join('');
+  } catch {}
+}
+$('#cs-refresh').onclick = refreshConsent;
+$('#cs-record').onclick = async () => {
+  try {
+    const r = await fetch('/v1/admin/compliance/consent', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        tenant_id: $('#cs-ten').value,
+        data_subject_id: $('#cs-subj').value || ('hash:' + Math.random().toString(36).slice(2,10)),
+        purpose: $('#cs-purp').value, status: $('#cs-st').value,
+        lawful_basis: $('#cs-lb').value, captured_via: $('#cs-via').value,
+        evidence_uri: $('#cs-ev').value || null,
+      }),
+    });
+    $('#cs-msg').textContent = r.ok ? '✓ recorded' : '✗ '+r.status;
+    refreshConsent();
+  } catch (e) { $('#cs-msg').textContent = '✗ '+e.message; }
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// COMPLIANCE · retention
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshRetention() {
+  const t = $('#rt-ten').value;
+  try {
+    const list = await fetchJSON('/v1/admin/compliance/retention?tenant_id='+encodeURIComponent(t));
+    $('#rt-table tbody').innerHTML = list.map(p => `<tr>
+      <td>${esc(p.data_class)}</td>
+      <td>${p.retention_days}</td>
+      <td>${esc(p.deletion_method)}</td>
+      <td>${p.legal_hold ? '∎ ON' : '○'}</td>
+      <td class="muted">${esc(p.notes||'')}</td>
+      <td>${esc(p.updated_by||'-')}</td>
+      <td><button class="small" data-rt-del="${esc(p.tenant_id)}|${esc(p.data_class)}">✗</button></td>
+    </tr>`).join('');
+    $$('#rt-table button[data-rt-del]').forEach(b => b.onclick = async () => {
+      const [tn, dc] = b.dataset.rtDel.split('|');
+      await fetch(`/v1/admin/compliance/retention/${encodeURIComponent(tn)}/${encodeURIComponent(dc)}`,
+                  {method:'DELETE'});
+      refreshRetention();
+    });
+  } catch {}
+}
+$('#rt-refresh').onclick = refreshRetention;
+$('#rt-seed').onclick = async () => {
+  await fetch('/v1/admin/compliance/retention/seed?tenant_id='+encodeURIComponent($('#rt-ten').value),
+              {method:'POST'});
+  refreshRetention();
+};
+$('#rt-hold').addEventListener('click', () => $('#rt-hold').classList.toggle('on'));
+$('#rt-save').onclick = async () => {
+  try {
+    const r = await fetch('/v1/admin/compliance/retention', {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        tenant_id: $('#rt-ten').value,
+        data_class: $('#rt-cls').value,
+        retention_days: parseInt($('#rt-d').value, 10),
+        deletion_method: $('#rt-m').value,
+        legal_hold: $('#rt-hold').classList.contains('on'),
+        notes: $('#rt-notes').value,
+      }),
+    });
+    $('#rt-msg').textContent = r.ok ? '✓ saved' : '✗ '+r.status;
+    refreshRetention();
+  } catch (e) { $('#rt-msg').textContent = '✗ '+e.message; }
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// COMPLIANCE · breach
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshBreach() {
+  try {
+    const list = await fetchJSON('/v1/admin/compliance/breach');
+    state.breaches = list;
+    const open = list.filter(b => !b.closed_at);
+    const od   = await fetchJSON('/v1/admin/compliance/breach/overdue');
+    $('#br-open').textContent = open.length;
+    $('#br-od').textContent   = od.length;
+    $('#br-crit').textContent = open.filter(b => b.severity === 'critical').length;
+    $('#br-cl').textContent   = list.filter(b =>  b.closed_at).length;
+    $('#br-table tbody').innerHTML = list.map(b => {
+      const due = Object.entries(b.notifications_due||{}).map(([w,t])=>{
+        const sent = (b.notifications_sent||{})[w];
+        const tag = sent ? '✓' : (Date.now()/1000 > t ? '✗ overdue' : '○');
+        return `<span class="kbd" title="${esc(new Date(t*1000).toISOString())}">${tag} ${esc(w)}</span>`;
+      }).join(' ');
+      return `<tr>
+        <td>${esc(b.breach_id)}</td>
+        <td>${esc(b.severity)}</td>
+        <td>${esc(b.kind)}</td>
+        <td>${esc(b.title)}</td>
+        <td>${esc((b.jurisdictions||[]).join(','))}</td>
+        <td>${due}</td>
+        <td>${esc(new Date(b.detected_at*1000).toISOString().slice(0,19).replace('T',' '))}</td>
+        <td>${b.closed_at ? esc(new Date(b.closed_at*1000).toISOString().slice(0,10)) : '—'}</td>
+        <td>${b.closed_at ? '' : `<button class="small" data-br-close="${esc(b.breach_id)}">CLOSE</button>`}</td>
+      </tr>`;
+    }).join('');
+    $$('#br-table button[data-br-close]').forEach(b => b.onclick = async () => {
+      const u = prompt('RCCA URI? (optional)') || '';
+      await fetch('/v1/admin/compliance/breach/'+b.dataset.brClose+'/close', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({rcca_uri: u}),
+      });
+      refreshBreach();
+    });
+  } catch {}
+}
+$('#br-open-btn').onclick = async () => {
+  try {
+    const r = await fetch('/v1/admin/compliance/breach', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        tenant_id: $('#br-ten').value || null,
+        severity: $('#br-sev').value, kind: $('#br-k').value,
+        title: $('#br-title').value, summary: $('#br-sum').value,
+        jurisdictions: $('#br-jur').value.split(',').map(s=>s.trim()).filter(Boolean),
+        affected_subjects_estimate: parseInt($('#br-n').value, 10) || null,
+      }),
+    });
+    const j = await r.json();
+    $('#br-msg').textContent = r.ok ? '✓ opened '+j.breach_id : '✗ '+r.status;
+    refreshBreach();
+  } catch (e) { $('#br-msg').textContent = '✗ '+e.message; }
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// COMPLIANCE · risks + AIIA
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshRisks() {
+  try {
+    const list = await fetchJSON('/v1/admin/compliance/risks');
+    $('#rk-table tbody').innerHTML = list.map(r => `<tr>
+      <td>${esc(r.risk_id)}</td>
+      <td>${esc(r.category)}</td>
+      <td>${esc(r.title)}</td>
+      <td>${esc(r.likelihood)}</td>
+      <td>${esc(r.impact)}</td>
+      <td><b>${r.score}</b></td>
+      <td>${esc(r.status)}</td>
+      <td class="muted small">${esc((r.framework_refs||[]).join(' · '))}</td>
+    </tr>`).join('');
+  } catch {}
+}
+$('#rk-refresh').onclick = refreshRisks;
+$('#rk-seed').onclick = async () => {
+  await fetch('/v1/admin/compliance/risks/seed', {method:'POST'});
+  refreshRisks();
+};
+async function refreshAIIA() {
+  try {
+    const list = await fetchJSON('/v1/admin/compliance/aiia');
+    $('#ai-table tbody').innerHTML = list.map(a => `<tr>
+      <td>${esc(a.report_id)}</td>
+      <td>${esc(a.system_name)}</td>
+      <td>${esc(a.risk_classification)}</td>
+      <td>${esc((a.deployed_geographies||[]).join(','))}</td>
+      <td>${esc(a.sign_off_by||'-')}</td>
+      <td>${a.next_review_at ? esc(new Date(a.next_review_at*1000).toISOString().slice(0,10)) : '—'}</td>
+    </tr>`).join('');
+  } catch {}
+}
+$('#ai-create').onclick = async () => {
+  try {
+    const r = await fetch('/v1/admin/compliance/aiia', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        system_name: $('#ai-sys').value,
+        intended_purpose: $('#ai-purp').value,
+        deployed_geographies: $('#ai-geo').value.split(',').map(s=>s.trim()).filter(Boolean),
+        affected_groups:     $('#ai-grp').value.split(',').map(s=>s.trim()).filter(Boolean),
+        human_oversight_summary: $('#ai-ho').value,
+        monitoring_summary:      $('#ai-mon').value,
+      }),
+    });
+    const j = await r.json();
+    $('#ai-msg').textContent = r.ok ? '✓ '+j.report_id+' (cls: '+j.risk_classification+')' : '✗ '+r.status;
+    refreshAIIA();
+  } catch (e) { $('#ai-msg').textContent = '✗ '+e.message; }
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// COMPLIANCE · model cards
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshCards() {
+  try {
+    const list = await fetchJSON('/v1/admin/compliance/model-cards');
+    $('#mc-table tbody').innerHTML = list.map(c => `<tr>
+      <td>${esc(c.card_id)}</td>
+      <td>${esc(c.system_name)}</td>
+      <td>${esc(c.provider)}</td>
+      <td>${esc(c.model_id)}</td>
+      <td>v${c.current_version}</td>
+      <td>${esc(new Date(c.created_at*1000).toISOString().slice(0,19).replace('T',' '))}</td>
+    </tr>`).join('');
+  } catch {}
+}
+$('#mc-refresh').onclick = refreshCards;
+$('#mc-create').onclick = async () => {
+  try {
+    const r = await fetch('/v1/admin/compliance/model-cards', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        system_name: $('#mc-sys').value, provider: $('#mc-pr').value,
+        model_id: $('#mc-mid').value, contact: $('#mc-ct').value,
+        intended_use: $('#mc-use').value,
+        out_of_scope_use: $('#mc-oos').value.split(',').map(s=>s.trim()).filter(Boolean),
+      }),
+    });
+    const j = await r.json();
+    $('#mc-msg').textContent = r.ok ? '✓ '+j.card_id : '✗ '+r.status;
+    refreshCards();
+  } catch (e) { $('#mc-msg').textContent = '✗ '+e.message; }
+};
+
+// ═════════════════════════════════════════════════════════════════════════
+// COMPLIANCE · profile
+// ═════════════════════════════════════════════════════════════════════════
+async function refreshProfile() {
+  const t = $('#pf-ten').value;
+  try {
+    const p = await fetchJSON('/v1/admin/compliance/profile/'+encodeURIComponent(t));
+    $('#pf-name').value = p.legal_name || '';
+    $('#pf-addr').value = p.address || '';
+    $('#pf-dpo').value  = p.dpo_contact || '';
+    $('#pf-rep').value  = p.representative_eu || '';
+    $('#pf-lb').value   = p.lawful_basis || 'contract';
+    $('#pf-purp').value = (p.purposes_of_processing || []).join(', ');
+    $('#pf-cat').value  = (p.categories_of_data || []).join(', ');
+    $('#pf-sub').value  = (p.categories_of_subjects || []).join(', ');
+    $('#pf-geo').value  = (p.deployment_geographies || []).join(', ');
+    $('#pf-sp').value   = (p.sub_processors || []).join(', ');
+    $('#pf-fr').value   = (p.applicable_frameworks || []).join(', ');
+    $('#pf-jur').value  = (p.breach_reporting_jurisdictions || []).join(', ');
+    $('#pf-cb').value   = (p.cross_border_basis || []).join(', ');
+    $('#pf-spi').classList.toggle('on', !!p.sensitive_pi);
+    $('#pf-sdf').classList.toggle('on', !!p.is_significant_data_fiduciary);
+    $('#pf-hr').classList.toggle('on',  !!p.is_high_risk_ai);
+    const ut = encodeURIComponent(t);
+    $('#pf-ropa').href = '/v1/admin/compliance/transparency/'+ut+'/ropa';
+    $('#pf-priv').href = '/v1/admin/compliance/transparency/'+ut+'/privacy-notice';
+    $('#pf-eu').href   = '/v1/admin/compliance/transparency/'+ut+'/eu-ai-act';
+  } catch {}
+}
+$('#pf-load').onclick = refreshProfile;
+['pf-spi','pf-sdf','pf-hr'].forEach(id => $('#'+id).addEventListener('click', () => $('#'+id).classList.toggle('on')));
+$('#pf-save').onclick = async () => {
+  const split = s => s.split(',').map(x=>x.trim()).filter(Boolean);
+  try {
+    const r = await fetch('/v1/admin/compliance/profile/'+encodeURIComponent($('#pf-ten').value), {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        legal_name: $('#pf-name').value,
+        address: $('#pf-addr').value,
+        dpo_contact: $('#pf-dpo').value,
+        representative_eu: $('#pf-rep').value,
+        lawful_basis: $('#pf-lb').value,
+        purposes_of_processing: split($('#pf-purp').value),
+        categories_of_data: split($('#pf-cat').value),
+        categories_of_subjects: split($('#pf-sub').value),
+        deployment_geographies: split($('#pf-geo').value),
+        sub_processors: split($('#pf-sp').value),
+        applicable_frameworks: split($('#pf-fr').value),
+        breach_reporting_jurisdictions: split($('#pf-jur').value),
+        cross_border_basis: split($('#pf-cb').value),
+        sensitive_pi: $('#pf-spi').classList.contains('on'),
+        is_significant_data_fiduciary: $('#pf-sdf').classList.contains('on'),
+        is_high_risk_ai: $('#pf-hr').classList.contains('on'),
+      }),
+    });
+    $('#pf-msg').textContent = r.ok ? '✓ saved' : '✗ '+r.status;
+    refreshProfile();
+  } catch (e) { $('#pf-msg').textContent = '✗ '+e.message; }
+};
+</script>
+</body>
+</html>

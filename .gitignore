@@ -1,0 +1,53 @@
+# --- Python build / cache ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+build/
+dist/
+wheels/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- Virtualenvs ---
+.venv/
+venv/
+env/
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- TrustLens runtime state ---
+# Signer keys, cert store, shadow eval — these MUST stay off VCS.
+.trustlens/
+*.pem
+*.key
+
+# Local benchmark / runtime artifacts
+results/
+*.scorecard.json
+/tmp_*.json
+
+# Dev databases / logs
+*.log
+*.sqlite
+*.sqlite3
+
+# Backup files
+*.bak
+*~
+
+# Local environment overrides
+.env
+.env.local
+*.local.json

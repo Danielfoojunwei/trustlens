@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trustlens"
+version = "1.0.0"
+description = "Verifiable hallucination control for LLMs — gateway, verifier, and signed trust certificates."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [{name = "TrustLens"}]
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.6",
+    "httpx>=0.27",
+    "cryptography>=42",
+    "prometheus-client>=0.20",
+    "cachetools>=5.3",
+    "orjson>=3.10",
+    "tenacity>=8.2",
+    "sse-starlette>=2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+]
+# Transformer NLI (DeBERTa-v3) + vector KB (sentence-transformers)
+nli = [
+    "transformers>=4.40",
+    "torch>=2.2",
+    "sentencepiece",
+    "sentence-transformers>=3.0",
+]
+# Platt scaling + ECE calibration  (trustlens calibrate)
+calibration = [
+    "scikit-learn>=1.4",
+]
+# Anthropic Messages API backend  (ANTHROPIC_API_KEY)
+anthropic = [
+    "anthropic>=0.25",
+]
+# 10-axis capability sweep         (trustlens sweep)
+sweep = [
+    "datasets>=2.19",
+    "evaluate>=0.4",
+]
+# Optional OpenTelemetry tracing
+otel = [
+    "opentelemetry-api>=1.24",
+    "opentelemetry-sdk>=1.24",
+]
+# Install everything (dev / CI)
+all = [
+    "trustlens[nli,calibration,anthropic,sweep,otel]",
+]
+
+[project.scripts]
+trustlens = "trustlens.cli.main:main"
+
+[tool.setuptools.packages.find]
+include = ["trustlens*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
