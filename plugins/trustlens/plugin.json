@@ -1,0 +1,40 @@
+{
+  "name": "trustlens",
+  "version": "1.0.0",
+  "description": "Manage a TrustLens gateway from your agent: status, tenants, incidents, alerts.",
+  "homepage": "https://github.com/danielfoojunwei/trustlens",
+  "commands": [
+    {
+      "name": "trustlens-status",
+      "description": "One-shot health + KPI snapshot from the configured gateway.",
+      "script": "trustlens agent status --base-url $TRUSTLENS_BASE_URL"
+    },
+    {
+      "name": "trustlens-incidents",
+      "description": "List open incidents (unacknowledged, newest first).",
+      "script": "trustlens agent incidents --base-url $TRUSTLENS_BASE_URL"
+    },
+    {
+      "name": "trustlens-alerts",
+      "description": "Show configured alert rules.",
+      "script": "trustlens agent alerts --base-url $TRUSTLENS_BASE_URL"
+    },
+    {
+      "name": "trustlens-capabilities",
+      "description": "Machine-readable catalogue of agent-facing endpoints.",
+      "script": "trustlens agent capabilities --base-url $TRUSTLENS_BASE_URL"
+    }
+  ],
+  "env": {
+    "TRUSTLENS_BASE_URL": {
+      "description": "Gateway base URL (https:// in prod)",
+      "required": true
+    },
+    "TRUSTLENS_API_KEY": {
+      "description": "Bearer API key minted via POST /v1/auth/keys",
+      "required": true,
+      "secret": true
+    }
+  },
+  "skill_file": "SKILL.md"
+}

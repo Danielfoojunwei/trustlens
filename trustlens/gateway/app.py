@@ -15,16 +15,22 @@ X-TrustLens-Certificate-Id: <cert_id>    — returned on every verified response
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+import os
 import time
 import uuid
+from contextlib import asynccontextmanager
 from typing import Callable, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
-from trustlens.certificate.schema import CertificateStatus
-from trustlens.certificate.signer import KeyPair, sign_certificate
+from trustlens.certificate.schema import Certificate, CertificateStatus
+from trustlens.certificate.signer import KeyPair, sign_certificate, verify_certificate
 from trustlens.certificate.store import CertificateStore
 from trustlens.gateway.backends import BackendRegistry
 from trustlens.gateway.schemas import (
@@ -44,6 +50,7 @@ from trustlens.auth import (
 from trustlens.auth.dependencies import AuthContext, set_auth_context
 from trustlens.auth.providers import AuthProvider
 from trustlens.gateway.admin_api import build_admin_router
+from trustlens.gateway.agent_routes import AlertRuleStore, build_agent_router
 from trustlens.gateway.auth_routes import (
     bootstrap_default_users, build_auth_router,
 )
@@ -71,7 +78,11 @@ from trustlens.oracles.registry import OracleSelection
 from trustlens.robustness.circuit_breaker import CircuitBreaker
 from trustlens.tenancy.budget import BudgetExceeded, BudgetTracker
 from trustlens.tenancy.config import TenantConfig, TenantConfigStore, TenantTier
+from trustlens.utils.redact import redact_secrets
 from trustlens.verifier.engine import VerificationRequest, VerifierEngine
+
+
+logger = logging.getLogger(__name__)
 
 
 TenantResolver = Callable[[Optional[str], Optional[str]], Optional[TenantConfig]]
@@ -124,8 +135,64 @@ def build_gateway(
     risk_store: Optional[RiskStore] = None,
     model_card_store: Optional[ModelCardStore] = None,
     profile_store: Optional[ProfileStore] = None,
+    cors_origins: Optional[list[str]] = None,
+    max_request_bytes: int = 2 * 1024 * 1024,
+    per_ip_rps: Optional[float] = None,
+    alert_store: Optional[AlertRuleStore] = None,
 ) -> FastAPI:
-    app = FastAPI(title="TrustLens Gateway", version="1.0.0")
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI):
+        logger.info("gateway starting")
+        try:
+            yield
+        finally:
+            logger.info("gateway shutting down; draining backends")
+            try:
+                await backend_registry.close_all()
+            except Exception as e:
+                logger.warning("backend close failed: %s", type(e).__name__)
+
+    app = FastAPI(title="TrustLens Gateway", version="1.0.0", lifespan=_lifespan)
+
+    origins = cors_origins if cors_origins is not None else []
+    if origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+            allow_headers=["*"],
+        )
+
+    # Body size limit — protects against unbounded `messages` arrays on chat.
+    _max_bytes = max_request_bytes
+
+    class _SizeLimitMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next):
+            cl = request.headers.get("content-length")
+            if cl is not None:
+                try:
+                    if int(cl) > _max_bytes:
+                        return Response(
+                            content=json.dumps({
+                                "error": {
+                                    "type": "bad_request",
+                                    "code": "payload_too_large",
+                                    "message": f"request body exceeds {_max_bytes} bytes",
+                                }
+                            }),
+                            media_type="application/json",
+                            status_code=413,
+                        )
+                except ValueError:
+                    pass
+            return await call_next(request)
+
+    app.add_middleware(_SizeLimitMiddleware)
+
+    if per_ip_rps is not None and per_ip_rps > 0:
+        from trustlens.gateway.ratelimit import PerIPRateLimit
+        app.add_middleware(PerIPRateLimit, rps=per_ip_rps)
     resolver = tenant_resolver or default_tenant_resolver(tenant_store)
     budget = budget_tracker or BudgetTracker()
     breaker = circuit_breaker or CircuitBreaker(failure_threshold=50, recovery_time_s=30)
@@ -203,6 +270,25 @@ def build_gateway(
     app.state.model_cards = cards
     app.state.profiles = profiles
 
+    # Agent control surface (/v1/agent/*). Read the SKILL.md at the repo root
+    # for how an agentic harness should call these endpoints.
+    alerts = alert_store or AlertRuleStore(
+        path=os.environ.get("TRUSTLENS_ALERT_STORE"),
+    )
+    app.include_router(build_agent_router(
+        tenant_store=tenant_store,
+        cert_store=cert_store,
+        backend_registry=backend_registry,
+        oracle_registry=engine._oracles,  # type: ignore[attr-defined]
+        kb=vkb,
+        incidents=incidents,
+        event_log=evlog,
+        audit_log=audit_log,
+        alert_store=alerts,
+        signer=signer,
+    ))
+    app.state.alert_store = alerts
+
     # Mount the operator dashboard at /dashboard (redirects / → /dashboard)
     app.include_router(build_dashboard_router())
 
@@ -216,16 +302,44 @@ def build_gateway(
     @app.get("/healthz")
     async def healthz() -> dict:
         from trustlens.version import PIPELINE_VERSION
-        return {"status": "ok", "pipeline_version": PIPELINE_VERSION}
+        checks: dict[str, str] = {}
+        try:
+            _ = signer.key_id
+            checks["signer"] = "ok"
+        except Exception:
+            checks["signer"] = "fail"
+        try:
+            _ = backend_registry.names()
+            checks["backend_registry"] = "ok"
+        except Exception:
+            checks["backend_registry"] = "fail"
+        try:
+            _ = cert_store is not None
+            checks["cert_store"] = "ok" if cert_store is not None else "fail"
+        except Exception:
+            checks["cert_store"] = "fail"
+        ok = all(v == "ok" for v in checks.values())
+        body = {
+            "status": "ok" if ok else "degraded",
+            "pipeline_version": PIPELINE_VERSION,
+            "checks": checks,
+        }
+        if not ok:
+            raise HTTPException(status_code=503, detail=body)
+        return body
 
     @app.get("/readyz")
     async def readyz() -> dict:
         if not breaker.allow():
             raise HTTPException(status_code=503, detail="circuit_open")
+        backend_names = backend_registry.names()
+        oracle_names = engine._oracles.names()  # type: ignore[attr-defined]
+        if not backend_names:
+            raise HTTPException(status_code=503, detail="no_backends")
         return {
             "status": "ready",
-            "backends": backend_registry.names(),
-            "oracles": engine._oracles.names(),  # type: ignore[attr-defined]
+            "backends": backend_names,
+            "oracles": oracle_names,
         }
 
     @app.get("/metrics")
@@ -234,6 +348,41 @@ def build_gateway(
         return PlainTextResponse(
             metrics.render(), media_type="text/plain; version=0.0.4"
         )
+
+    # Server-side certificate verification. Accepts either a stored cert_id
+    # (looked up and re-verified) or an inline certificate JSON object. The
+    # signature is checked against the gateway's own signer public key.
+    @app.post("/v1/verify")
+    async def verify_endpoint(body: dict) -> dict:
+        cert_obj: Optional[Certificate] = None
+        if "cert_id" in body and body["cert_id"]:
+            cert_obj = cert_store.get(body["cert_id"])
+            if cert_obj is None:
+                raise HTTPException(status_code=404, detail="cert_not_found")
+        elif "certificate" in body and body["certificate"]:
+            try:
+                cert_obj = Certificate.model_validate(body["certificate"])
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"invalid_certificate:{type(e).__name__}",
+                )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="either cert_id or certificate must be provided",
+            )
+
+        result = verify_certificate(cert_obj, signer.public_key)
+        return {
+            "valid": bool(result.valid),
+            "reason": result.reason,
+            "schema_version_match": result.schema_version_match,
+            "pipeline_version_match": result.pipeline_version_match,
+            "cert_id": cert_obj.cert_id,
+            "signer_key_id": cert_obj.signer_key_id,
+            "overall_status": cert_obj.payload.overall_status.value,
+        }
 
     @app.post("/v1/chat/completions")
     async def chat_completions(
@@ -329,9 +478,14 @@ def build_gateway(
             metrics.gateway_requests_total.labels(
                 tenant=tenant.tenant_id, backend=backend.name, status="backend_error",
             ).inc()
+            logger.warning(
+                "backend_error tenant=%s backend=%s err=%s",
+                tenant.tenant_id, backend.name,
+                redact_secrets(type(e).__name__),
+            )
             return _error_response(
                 502, "bad_gateway", "backend_error",
-                f"upstream {backend.name} failed: {type(e).__name__}",
+                redact_secrets(f"upstream {backend.name} failed: {type(e).__name__}"),
             )
 
         # Track actual tokens
@@ -368,16 +522,24 @@ def build_gateway(
             except Exception as e:
                 breaker.record_failure()
                 metrics.verifier_errors_total.labels(kind=type(e).__name__).inc()
+                logger.exception(
+                    "verifier_failed tenant=%s backend=%s",
+                    tenant.tenant_id, backend.name,
+                )
                 return _error_response(
                     500, "verification_failed", "verify_error",
-                    f"verification failed: {type(e).__name__}",
+                    redact_secrets(f"verification failed: {type(e).__name__}"),
                 )
 
             cert = sign_certificate(vresult.payload, signer)
             try:
                 cert_store.put(cert)
-            except Exception:
+            except Exception as e:
                 metrics.certificate_store_errors_total.inc()
+                logger.error(
+                    "cert_store.put failed cert_id=%s err=%s",
+                    cert.cert_id, type(e).__name__,
+                )
 
             # If blocked, suppress the upstream output
             if vresult.payload.overall_status == CertificateStatus.BLOCKED:
@@ -421,7 +583,8 @@ def build_gateway(
             ))
             # Tamper-evident audit log entry — proves a cert was issued.
             try:
-                audit_log.append(
+                await asyncio.to_thread(
+                    audit_log.append,
                     actor=tenant.tenant_id, actor_role="tenant",
                     action="cert.issue", outcome="success",
                     tenant_id=tenant.tenant_id,
@@ -435,14 +598,20 @@ def build_gateway(
                         "latency_ms": round(latency_ms, 3),
                     },
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(
+                    "audit_log.append failed cert_id=%s err=%s",
+                    annotation.certificate_id, type(e).__name__,
+                )
 
             # 3-axis record
             try:
                 axes.record(extract_axes(vresult.payload, annotation.certificate_id))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(
+                    "axes.record failed cert_id=%s err=%s",
+                    annotation.certificate_id, type(e).__name__,
+                )
 
             # Auto-incident heuristics: blocked certs or degraded state
             if annotation.certificate_status == "blocked":
@@ -456,7 +625,7 @@ def build_gateway(
             elif annotation.certificate_status == "degraded":
                 incidents.record(
                     kind="oracle.slow", severity=Severity.INFO,
-                    title=f"degraded verification path",
+                    title="degraded verification path",
                     tenant_id=tenant.tenant_id, cert_id=annotation.certificate_id,
                     detail={"degradations": annotation.degradations},
                 )
@@ -565,7 +734,8 @@ async def _stream_completion(
                     break
         except Exception as e:
             breaker.record_failure()
-            err = {"error": {"type": "backend_error", "message": str(e)}}
+            err = {"error": {"type": "backend_error",
+                             "message": redact_secrets(str(e))}}
             yield f"data: {json.dumps(err)}\n\n"
             yield "data: [DONE]\n\n"
             return
@@ -603,8 +773,12 @@ async def _stream_completion(
                 cert = sign_certificate(vresult.payload, signer)
                 try:
                     cert_store.put(cert)
-                except Exception:
+                except Exception as e:
                     metrics.certificate_store_errors_total.inc()
+                    logger.error(
+                        "cert_store.put failed cert_id=%s err=%s",
+                        cert.cert_id, type(e).__name__,
+                    )
                 annotation_dict = {
                     "certificate_id": cert.cert_id,
                     "certificate_status": vresult.payload.overall_status.value,
@@ -683,3 +857,71 @@ def _estimate_tokens(body: ChatCompletionRequest) -> int:
     prompt_tokens = max(1, prompt_chars // 4)
     completion_tokens = body.max_tokens or 256
     return prompt_tokens + completion_tokens
+
+
+def build_gateway_from_env() -> FastAPI:
+    """Factory for uvicorn's ``--factory`` mode (multi-worker deployments).
+
+    Reads the same env vars as ``trustlens serve-gateway``. Each uvicorn
+    worker calls this in its own process.
+    """
+    import os
+    from pathlib import Path
+
+    from trustlens.certificate.signer import KeyPair
+    from trustlens.certificate.store import FilesystemStore
+    from trustlens.gateway.backends import (
+        BackendRegistry, EchoBackend, OpenAICompatBackend,
+    )
+    from trustlens.oracles.customer_kb import CustomerKBOracle, LexicalKBIndex
+    from trustlens.oracles.registry import OracleRegistry
+    from trustlens.tenancy.config import (
+        InMemoryTenantStore, TenantConfig, TenantTier,
+    )
+    from trustlens.verifier.engine import VerifierEngine
+
+    key_path = Path(os.environ.get("TRUSTLENS_SIGNER_KEY",
+                                   "./.trustlens/signer.pem"))
+    store_path = os.environ.get("TRUSTLENS_CERT_STORE", "./.trustlens/certs")
+    key_path.parent.mkdir(parents=True, exist_ok=True)
+    if key_path.exists():
+        keypair = KeyPair.from_private_pem(key_path.read_bytes())
+    else:
+        keypair = KeyPair.generate()
+        key_path.write_bytes(keypair.private_pem())
+
+    backends: list = [EchoBackend()]
+    allowed = ["echo"]
+    backend_url = os.environ.get("TRUSTLENS_BACKEND_URL")
+    if backend_url:
+        backends.append(OpenAICompatBackend(
+            name="openai", base_url=backend_url,
+            api_key=os.environ.get("OPENAI_API_KEY"),
+        ))
+        allowed.append("openai")
+
+    tenants = InMemoryTenantStore([
+        TenantConfig(
+            tenant_id=os.environ.get("TRUSTLENS_DEMO_TENANT", "demo"),
+            tier=TenantTier.PRO,
+            allowed_backends=allowed,
+        )
+    ])
+    kb = LexicalKBIndex()
+    registry = OracleRegistry([CustomerKBOracle(kb)])
+    engine = VerifierEngine(registry)
+
+    cors_origins = [
+        o.strip() for o in os.environ.get("TRUSTLENS_CORS_ORIGINS", "").split(",")
+        if o.strip()
+    ] or None
+
+    return build_gateway(
+        engine=engine,
+        signer=keypair,
+        cert_store=FilesystemStore(store_path),
+        backend_registry=BackendRegistry(backends),
+        tenant_store=tenants,
+        kb_index=kb,
+        cors_origins=cors_origins,
+    )

@@ -9,12 +9,33 @@ not inside it — this keeps the adapter layer thin.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from typing import AsyncIterator, Optional, Protocol
 
 import httpx
+from tenacity import (
+    AsyncRetrying, retry_if_exception_type, stop_after_attempt,
+    wait_exponential,
+)
 
 from trustlens.gateway.schemas import ChatCompletionRequest, ChatMessage
+from trustlens.utils.redact import redact_secrets
+
+
+logger = logging.getLogger(__name__)
+
+
+_RETRYABLE_EXC = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.ReadTimeout,
+    httpx.RemoteProtocolError,
+)
+
+
+def _is_retryable_http_status(resp: httpx.Response) -> bool:
+    return resp.status_code in (429, 500, 502, 503, 504)
 
 
 @dataclass
@@ -98,10 +119,12 @@ class OpenAICompatBackend:
         api_key: Optional[str] = None,
         timeout_s: float = 30.0,
         client: Optional[httpx.AsyncClient] = None,
+        max_retries: int = 3,
     ):
         self.name = name
         self.base_url = base_url.rstrip("/")
         self._api_key = api_key
+        self._max_retries = max_retries
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
@@ -113,7 +136,35 @@ class OpenAICompatBackend:
 
     async def complete(self, req: ChatCompletionRequest) -> BackendResponse:
         body = self._body(req, stream=False)
-        r = await self._client.post(f"{self.base_url}/chat/completions", json=body)
+
+        async def _post_once() -> httpx.Response:
+            r = await self._client.post(
+                f"{self.base_url}/chat/completions", json=body
+            )
+            if _is_retryable_http_status(r):
+                raise httpx.HTTPStatusError(
+                    f"retryable {r.status_code}", request=r.request, response=r,
+                )
+            return r
+
+        r: Optional[httpx.Response] = None
+        async for attempt in AsyncRetrying(
+            reraise=True,
+            stop=stop_after_attempt(max(1, self._max_retries)),
+            wait=wait_exponential(multiplier=0.25, min=0.25, max=4.0),
+            retry=retry_if_exception_type(_RETRYABLE_EXC + (httpx.HTTPStatusError,)),
+        ):
+            with attempt:
+                try:
+                    r = await _post_once()
+                except Exception as e:
+                    logger.warning(
+                        "backend=%s retryable attempt=%d err=%s",
+                        self.name, attempt.retry_state.attempt_number,
+                        redact_secrets(type(e).__name__),
+                    )
+                    raise
+        assert r is not None
         r.raise_for_status()
         data = r.json()
         choice = data.get("choices", [{}])[0]
@@ -215,5 +266,6 @@ class BackendRegistry:
         for b in self._by_name.values():
             try:
                 await b.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("backend close failed name=%s err=%s",
+                               getattr(b, "name", "?"), type(e).__name__)
